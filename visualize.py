@@ -36,7 +36,10 @@ def plot_route(gt, out, c_gt='g', c_out='r', pred_x_idx=3, pred_y_idx=4, pred_z_
 
 # Define the trajectories to plot (Mid-Air dataset)
 trajectories_to_plot = [
-    ('Kite_training/sunny', 'trajectory_0008')
+    ('Kite_training/cloudy', 'trajectory_3008'),
+    ('Kite_training/foggy', 'trajectory_2008'),
+    ('Kite_training/sunny', 'trajectory_0008'),
+    ('Kite_training/sunset', 'trajectory_1008')
 ]
 
 for climate, traj_id in trajectories_to_plot:

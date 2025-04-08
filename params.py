@@ -30,10 +30,10 @@ class Parameters():
             #'Kite_training/sunset': ['trajectory_1007', 'trajectory_1008']
         }
         self.test_traj_ids = {
-            #'Kite_training/cloudy': ['trajectory_3008'],
-            #'Kite_training/foggy': ['trajectory_2008'],
-            'Kite_training/sunny': ['trajectory_0008']
-            #'Kite_training/sunset': ['trajectory_1008']
+            'Kite_training/cloudy': ['trajectory_3008'],
+            'Kite_training/foggy': ['trajectory_2008'],
+            'Kite_training/sunny': ['trajectory_0008'],
+            'Kite_training/sunset': ['trajectory_1008'],
         }
         
         self.partition = None
@@ -89,7 +89,7 @@ class Parameters():
         self.enable_rgb = True
         self.enable_depth = False
         self.enable_lidar = False
-        self.enable_imu = False
+        self.enable_imu = True
         self.enable_gps = True
 
         # Paths
