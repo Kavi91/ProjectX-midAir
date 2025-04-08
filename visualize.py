@@ -1,71 +1,83 @@
-import os
-import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # Required for 3D plotting
+from mpl_toolkits.mplot3d import Axes3D  # Import for 3D plotting
+import numpy as np
+import time
+from params import par
 
-def load_predicted_poses(file_path):
-    """
-    Load predicted poses from a text file.
-    Each line in the file should have six comma-separated numbers:
-    roll, pitch, yaw, x, y, z
-    Returns:
-        poses: numpy array of shape (N, 6)
-    """
-    poses = []
-    with open(file_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                parts = line.split(',')
-                pose = [float(x.strip()) for x in parts]
-                poses.append(pose)
-    return np.array(poses)
+pose_GT_dir = par.pose_dir  # '/media/krkavinda/New Volume/Mid-Air-Dataset/MidAir_processed/'
+predicted_result_dir = './result/'
+gradient_color = True
 
-def plot_trajectory(poses, output_path):
-    """
-    Plot the 3D trajectory of the predicted poses and save the plot.
-    This function extracts the x, y, z translation coordinates (assumed to be indices 3, 4, 5)
-    and plots them in a 3D plot.
-    
-    Args:
-      poses: numpy array of shape (N, 6)
-      output_path: file path to save the plot image.
-    """
-    if poses.size == 0:
-        print("No poses to plot.")
-        return
+def plot_route(gt, out, c_gt='g', c_out='r', pred_x_idx=3, pred_y_idx=4, pred_z_idx=5):
+    # Ground truth (X: North, Y: East, Z: Down)
+    gt_x_idx = 3  # X (North)
+    gt_y_idx = 4  # Y (East)
+    gt_z_idx = 5  # Z (Down)
 
-    # Extract translation components: x, y, z
-    x = poses[:, 3]
-    y = poses[:, 4]
-    z = poses[:, 5]
+    # Ground truth trajectory
+    x_gt = [v for v in gt[:, gt_x_idx]]
+    y_gt = [v for v in gt[:, gt_y_idx]]
+    z_gt = [v for v in gt[:, gt_z_idx]]
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot(x, y, z, label='Predicted Trajectory')
-    ax.set_xlabel('X (meters)')
-    ax.set_ylabel('Y (meters)')
-    ax.set_zlabel('Z (meters)')
-    ax.legend()
-    ax.set_title('Predicted Trajectory Visualization')
+    # Predicted trajectory with specified axis mapping
+    x_out = [v for v in out[:, pred_x_idx]]
+    y_out = [v for v in out[:, pred_y_idx]]
+    z_out = [v for v in out[:, pred_z_idx]]
 
-    # Save the plot to the specified file
-    plt.savefig(output_path)
-    print(f"Plot saved to: {output_path}")
-    plt.show()
+    # Plot in 3D
+    ax = plt.gca()
+    ax.plot(x_gt, y_gt, z_gt, color=c_gt, label='Ground Truth')
+    ax.plot(x_out, y_out, z_out, color=c_out, label='DeepVO')
+    ax.set_xlabel('X (North, meters)')
+    ax.set_ylabel('Y (East, meters)')
+    ax.set_zlabel('Z (Down, meters)')
+    # Set equal aspect ratio for 3D plot (approximation)
+    ax.set_box_aspect([1, 1, 1])
 
-if __name__ == '__main__':
-    # Path for the predicted poses file
-    predicted_file = "/home/krkavinda/ProjectX-midAir/result/out_Kite_training_sunny_trajectory_0008.txt"
-    
-    if not os.path.exists(predicted_file):
-        print(f"File not found: {predicted_file}")
-        exit(1)
-    
-    poses = load_predicted_poses(predicted_file)
-    print("Loaded predicted poses shape:", poses.shape)
-    print("First 5 predicted poses:\n", poses[:5])
-    
-    # Define the output path for the plot image
-    output_plot = "/home/krkavinda/ProjectX-midAir/result/trajectory_plot_Kite_training_sunny_trajectory_0008.png"
-    plot_trajectory(poses, output_plot)
+# Define the trajectories to plot (Mid-Air dataset)
+trajectories_to_plot = [
+    ('Kite_training/sunny', 'trajectory_0008')
+]
+
+for climate, traj_id in trajectories_to_plot:
+    print('='*50)
+    print(f'Trajectory: {climate}/{traj_id}')
+
+    # Load ground truth poses
+    traj_num = traj_id.replace('trajectory_', '')
+    GT_pose_path = f'{pose_GT_dir}/{climate}/poses/poses_{traj_num}.npy'
+    gt = np.load(GT_pose_path)
+
+    # Load predicted poses
+    climate_sanitized = climate.replace('/', '_')
+    pose_result_path = f'{predicted_result_dir}/out_{climate_sanitized}_{traj_id}.txt'
+    with open(pose_result_path) as f_out:
+        out = [l.strip() for l in f_out.readlines()]
+        for i, line in enumerate(out):
+            out[i] = [float(v) for v in line.split(',')]
+        out = np.array(out)
+        mse_rotate = 100 * np.mean((out[:, :3] - gt[:, :3])**2)
+        mse_translate = np.mean((out[:, 3:] - gt[:, 3:6])**2)
+        print('mse_rotate: ', mse_rotate)
+        print('mse_translate: ', mse_translate)
+
+    if gradient_color:
+        # Plot gradient color in 3D with Z (Down)_Y (East)_X (North) mapping for predicted poses
+        step = 200
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='3d')  # Create a 3D axis
+        plt.scatter([gt[0][3]], [gt[0][4]], [gt[0][5]], label='sequence start', marker='s', color='k')
+        for st in range(0, len(out), step):
+            end = st + step
+            g = max(0.2, st/len(out))
+            c_gt = (0, g, 0)
+            c_out = (1, g, 0)
+            # Predicted: Z (Down) as X (North), Y (East) as Y (East), X (North) as Z (Down)
+            plot_route(gt[st:end], out[st:end], c_gt, c_out, pred_x_idx=5, pred_y_idx=4, pred_z_idx=3)
+            if st == 0:
+                plt.legend()
+            plt.title(f'Trajectory: {climate}/{traj_id} (Predicted: Z(Down)_Y(East)_X(North))')
+            climate_sanitized = climate.replace('/', '_')
+            save_name = f'{predicted_result_dir}/route_3d_with_gt_{climate_sanitized}_{traj_id}_gradient_Z(Down)_Y(East)_X(North).png'
+        plt.savefig(save_name)
+        plt.close(fig)
