@@ -308,14 +308,18 @@ class ImageSequenceDataset(Dataset):
             # Depth normalization (only if enabled)
             if par.enable_depth:
                 depth_values = []
-                for depth_path_seq in info_dataframe.depth_path[:100]:
+                for index, depth_path_seq in enumerate(info_dataframe.depth_path[:100]):
                     for depth_path in depth_path_seq:
                         if os.path.exists(depth_path):
                             # Correctly decode 16-bit float depth map
                             depth_img = Image.open(depth_path)
                             depth_array = np.array(depth_img, dtype=np.uint16)  # Shape: [H, W]
                             depth_float16 = depth_array.view(np.float16)  # Shape: [H, W]
-                            depth_map = depth_float16.astype(np.float32)  # Shape: [H, W], depth in meters
+                            depth_map = depth_float16.astype(np.float32)  # Shape: [H, W]
+                            # Apply scaling factor to convert to meters (assuming depth values are scaled to [0, 65535])
+                            depth_map = depth_map * (self.depth_max / 65535.0)  # Scale to [0, depth_max]
+                            if index < 5:  # Log first 5 depth maps for debugging
+                                print(f"Sample depth map {index}: min={depth_map.min():.4f}, max={depth_map.max():.4f}, mean={depth_map.mean():.4f}")
                             depth_values.extend(depth_map.flatten())
                 depth_values = np.array(depth_values)
                 depth_values = depth_values[depth_values > 0]  # Exclude zero values (invalid depth)
@@ -508,7 +512,9 @@ class ImageSequenceDataset(Dataset):
                     depth_img = Image.open(depth_path)
                     depth_array = np.array(depth_img, dtype=np.uint16)  # Shape: [H, W]
                     depth_float16 = depth_array.view(np.float16)  # Shape: [H, W]
-                    depth_map = depth_float16.astype(np.float32)  # Shape: [H, W], depth in meters
+                    depth_map = depth_float16.astype(np.float32)  # Shape: [H, W]
+                    # Apply scaling factor to convert to meters (assuming depth values are scaled to [0, 65535])
+                    depth_map = depth_map * (self.depth_max / 65535.0)  # Scale to [0, depth_max]
                     depth_as_tensor = torch.from_numpy(depth_map).float() / self.depth_max  # Normalize to [0, 1]
                     depth_as_tensor = transforms.Resize((par.img_h, par.img_w))(depth_as_tensor.unsqueeze(0))
                     depth_as_tensor = self.normalizer_depth(depth_as_tensor)
