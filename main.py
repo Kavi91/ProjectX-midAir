@@ -142,7 +142,7 @@ elif par.optim['opt'] == 'Cosine':
 # Learning rate schedulers
 warmup_epochs = 5
 lr_scheduler_warmup = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: min(1.0, (epoch + 1) / warmup_epochs))
-lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=5)
+lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
 # Load trained model and optimizer
 if par.resume:
@@ -219,6 +219,9 @@ for ep in range(par.epochs):
     eta_minutes = (avg_epoch_time * remaining_epochs) / 60
     print(f"Epoch {ep+1}/{par.epochs} completed in {epoch_time:.1f} sec, ETA: {eta_minutes:.1f} minutes")
 
+    # Get current learning rate
+    current_lr = optimizer.param_groups[0]['lr']
+
     # Log to WandB
     wandb.log({
         "epoch": ep + 1,
@@ -228,10 +231,11 @@ for ep in range(par.epochs):
         "valid_loss_std": np.std(v_loss_list),
         "epoch_time": epoch_time,
         "eta_minutes": eta_minutes,
+        "learning_rate": current_lr,
     })
 
     with open(par.record_path, 'a') as f:
-        f.write(f'Epoch {ep + 1}\ntrain loss mean: {loss_mean}, std: {np.std(t_loss_list):.2f}\nvalid loss mean: {loss_mean_valid}, std: {np.std(v_loss_list):.2f}\n')
+        f.write(f'Epoch {ep + 1}\ntrain loss mean: {loss_mean}, std: {np.std(t_loss_list):.2f}\nvalid loss mean: {loss_mean_valid}, std: {np.std(v_loss_list):.2f}\nlearning rate: {current_lr}\n')
 
     # Save model
     check_interval = 1
@@ -249,7 +253,9 @@ for ep in range(par.epochs):
     # Apply schedulers
     if ep < warmup_epochs:
         lr_scheduler_warmup.step()
+        print(f"Warmup Epoch {ep+1}: Learning rate adjusted to {current_lr}")
     else:
         lr_scheduler.step(loss_mean_valid)
+        print(f"Epoch {ep+1}: Learning rate adjusted to {current_lr} based on validation loss")
 
 wandb.finish()

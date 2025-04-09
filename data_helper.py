@@ -311,10 +311,14 @@ class ImageSequenceDataset(Dataset):
                 for depth_path_seq in info_dataframe.depth_path[:100]:
                     for depth_path in depth_path_seq:
                         if os.path.exists(depth_path):
-                            depth_map = np.array(Image.open(depth_path)).astype(np.float32) / 1000.0  # Mid-Air depth in meters
+                            # Correctly decode 16-bit float depth map
+                            depth_img = Image.open(depth_path)
+                            depth_array = np.array(depth_img, dtype=np.uint16)  # Shape: [H, W]
+                            depth_float16 = depth_array.view(np.float16)  # Shape: [H, W]
+                            depth_map = depth_float16.astype(np.float32)  # Shape: [H, W], depth in meters
                             depth_values.extend(depth_map.flatten())
                 depth_values = np.array(depth_values)
-                depth_values = depth_values[depth_values > 0]
+                depth_values = depth_values[depth_values > 0]  # Exclude zero values (invalid depth)
                 self.depth_mean = depth_values.mean() if len(depth_values) > 0 else 0.0
                 self.depth_std = depth_values.std() if len(depth_values) > 0 else 1.0
                 print(f"Computed depth mean: {self.depth_mean:.4f}, std: {self.depth_std:.4f}")
@@ -413,8 +417,8 @@ class ImageSequenceDataset(Dataset):
         if index < 5:
             angles = groundtruth_sequence[:, :3]
             translations = groundtruth_sequence[:, 3:]
-            print(f"Sample {index} - Absolute Angles mean: {angles.mean().item():.4f}, std: {angles.std().item():.4f}")
-            print(f"Sample {index} - Absolute Translations mean: {translations.mean().item():.4f}, std: {translations.std().item():.4f}")
+            #print(f"Sample {index} - Absolute Angles mean: {angles.mean().item():.4f}, std: {angles.std().item():.4f}")
+            #print(f"Sample {index} - Absolute Translations mean: {translations.mean().item():.4f}, std: {translations.std().item():.4f}")
 
         # Convert absolute poses to relative poses
         relative_poses = []
@@ -448,8 +452,8 @@ class ImageSequenceDataset(Dataset):
         if index < 5:
             angles = groundtruth_sequence[:, :3]
             translations = groundtruth_sequence[:, 3:]
-            print(f"Sample {index} - Relative Angles mean: {angles.mean().item():.4f}, std: {angles.std().item():.4f}")
-            print(f"Sample {index} - Relative Translations mean: {translations.mean().item():.4f}, std: {translations.std().item():.4f}")
+            #print(f"Sample {index} - Relative Angles mean: {angles.mean().item():.4f}, std: {angles.std().item():.4f}")
+            #print(f"Sample {index} - Relative Translations mean: {translations.mean().item():.4f}, std: {translations.std().item():.4f}")
 
         # Cross-check with GPS data (if enabled)
         if par.enable_gps:
@@ -462,9 +466,9 @@ class ImageSequenceDataset(Dataset):
                 gps_relative_pos = torch.cat([torch.zeros(1, 3), gps_relative_pos], dim=0)  # Pad first frame with zeros
                 # Compare with ground truth translations
                 gt_translations = groundtruth_sequence[:, 3:]
-                if index < 5:
-                    print(f"Sample {index} - GPS Relative Positions mean: {gps_relative_pos.mean().item():.4f}, std: {gps_relative_pos.std().item():.4f}")
-                    print(f"Sample {index} - GT vs GPS Translation Diff mean: {(gt_translations - gps_relative_pos).abs().mean().item():.4f}")
+                #if index < 5:
+                    #print(f"Sample {index} - GPS Relative Positions mean: {gps_relative_pos.mean().item():.4f}, std: {gps_relative_pos.std().item():.4f}")
+                    #print(f"Sample {index} - GT vs GPS Translation Diff mean: {(gt_translations - gps_relative_pos).abs().mean().item():.4f}")
 
         image_path_sequence_03 = self.image_arr_03[index]
         image_path_sequence_02 = self.image_arr_02[index]
@@ -493,14 +497,19 @@ class ImageSequenceDataset(Dataset):
                 if len(depth_path_sequence) > expected_len:
                     depth_path_sequence = depth_path_sequence[:expected_len]
                 else:
-                    depth_path_sequence.extend([depth_path_sequence[-1] if depth_path_sequence else 'dummy'] * (expected_len - len(depth_path_sequence)))
+                    # Pad with zeros if depth data is missing
+                    depth_path_sequence.extend([None] * (expected_len - len(depth_path_sequence)))
             
             for depth_path in depth_path_sequence:
-                if not os.path.exists(depth_path) or depth_path == 'dummy':
+                if depth_path is None or not os.path.exists(depth_path):
                     depth_as_tensor = torch.zeros((1, par.img_h, par.img_w))
                 else:
-                    depth_map = np.array(Image.open(depth_path)).astype(np.float32) / 1000.0  # Mid-Air depth in meters
-                    depth_as_tensor = torch.from_numpy(depth_map).float() / self.depth_max
+                    # Correctly decode 16-bit float depth map
+                    depth_img = Image.open(depth_path)
+                    depth_array = np.array(depth_img, dtype=np.uint16)  # Shape: [H, W]
+                    depth_float16 = depth_array.view(np.float16)  # Shape: [H, W]
+                    depth_map = depth_float16.astype(np.float32)  # Shape: [H, W], depth in meters
+                    depth_as_tensor = torch.from_numpy(depth_map).float() / self.depth_max  # Normalize to [0, 1]
                     depth_as_tensor = transforms.Resize((par.img_h, par.img_w))(depth_as_tensor.unsqueeze(0))
                     depth_as_tensor = self.normalizer_depth(depth_as_tensor)
                 depth_sequence.append(depth_as_tensor.unsqueeze(0))

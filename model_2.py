@@ -635,10 +635,9 @@ class StereoAdaptiveVO(DeepVO):
         out_remapped[:, :, 3] = out[:, :, 5]  # Z -> X (North)
         out_remapped[:, :, 4] = out[:, :, 4]  # Y -> Y (East)
         out_remapped[:, :, 5] = out[:, :, 3]  # X -> Z (Down)
-        
-        # Flip directions to match ground truth
-        out_remapped[:, :, 3] *= -1  # Flip X (North)
-        out_remapped[:, :, 4] *= -1  # Flip Y (East)
+        # Remove sign flips to test if they are causing the mirroring
+        # out_remapped[:, :, 3] *= -1  # Flip X (North)
+        # out_remapped[:, :, 4] *= -1  # Flip Y (East)
         
         return out_remapped
 
@@ -652,11 +651,11 @@ class StereoAdaptiveVO(DeepVO):
         translation_loss = torch.nn.functional.mse_loss(predicted[:, :, 3:], y[:, :, 3:])
 
         # L2 regularization
-        l2_lambda = 0.01
+        l2_lambda = par.l2_lambda
         l2_loss = l2_lambda * sum(torch.norm(param) for param in self.parameters() if param.requires_grad)
 
-        # Base loss with rebalanced weights
-        base_loss = angle_loss + 10 * translation_loss + l2_loss
+        # Base loss with rebalanced weights (higher weight on angle_loss)
+        base_loss = par.k_factor * angle_loss + translation_loss + l2_loss  # Increased weight on angle_loss to 100
 
         # GPS-based pose correction loss (if GPS is enabled)
         gps_loss = torch.tensor(0.0, device=predicted.device)
@@ -679,7 +678,7 @@ class StereoAdaptiveVO(DeepVO):
             gps_loss = torch.nn.functional.mse_loss(predicted_trans, gps_rel_pos)
 
             # Weight the GPS loss
-            gps_loss_weight = 1.0
+            gps_loss_weight = par.gps_loss_weight
             gps_loss = gps_loss_weight * gps_loss
 
         # Total loss

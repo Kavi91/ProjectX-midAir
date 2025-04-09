@@ -1,0 +1,81 @@
+1. sunny dataset/rnn1000/lr1e3/wd1e4/optimizer-adam/
+
+        # Model
+        self.rnn_hidden_size = 1000
+        self.conv_dropout = (0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.5)
+        self.rnn_dropout_out = 0.5
+        self.rnn_dropout_between = 0.2
+        self.clip = 1.0
+        self.batch_norm = True
+        
+        # Training
+        self.epochs = 100
+        self.pin_mem = True
+        self.optim = {'opt': 'Adam', 'lr': 1e-3, 'weight_decay': 1e-4}
+        
+        # Pretrain, Resume training
+        self.pretrained_flownet = '/home/krkavinda/DeepVO-pytorch/FlowNet_models/pytorch/flownets_bn_EPE2.459.pth'
+        self.resume = False
+        self.resume_t_or_v = '.train'
+
+
+        # Modality flags
+        self.enable_rgb = True
+        self.enable_depth = True
+        self.enable_lidar = False
+        self.enable_imu = True
+        self.enable_gps = True
+
+                # Specific trajectory IDs for training, validation, and test
+        self.train_traj_ids = {
+            #'Kite_training/cloudy': ['trajectory_3000', 'trajectory_3001', 'trajectory_3002', 'trajectory_3003', 'trajectory_3004', 'trajectory_3005', 'trajectory_3006'],
+            #'Kite_training/foggy': ['trajectory_2000', 'trajectory_2001', 'trajectory_2002', 'trajectory_2003', 'trajectory_2004', 'trajectory_2005', 'trajectory_2006'],
+            'Kite_training/sunny': ['trajectory_0000', 'trajectory_0001', 'trajectory_0002', 'trajectory_0003', 'trajectory_0004', 'trajectory_0005', 'trajectory_0006']
+            #'Kite_training/sunset': ['trajectory_1000', 'trajectory_1001', 'trajectory_1002', 'trajectory_1003', 'trajectory_1004', 'trajectory_1005', 'trajectory_1006']
+        }
+        self.valid_traj_ids = {
+            #'Kite_training/cloudy': ['trajectory_3007', 'trajectory_3008'],
+            #'Kite_training/foggy': ['trajectory_2007', 'trajectory_2008'],
+            'Kite_training/sunny': ['trajectory_0007', 'trajectory_0009', 'trajectory_0010']
+            #'Kite_training/sunset': ['trajectory_1007', 'trajectory_1008']
+        }
+        self.test_traj_ids = {
+            'Kite_training/cloudy': ['trajectory_3008'],
+            'Kite_training/foggy': ['trajectory_2008'],
+            'Kite_training/sunny': ['trajectory_0008'],
+            'Kite_training/sunset': ['trajectory_1008']
+
+
+**            gps_loss_weight = 0.1  # Already adjusted to 0.5
+            gps_loss = gps_loss_weight * gps_loss
+
+                    base_loss = 100 * angle_loss + translation_loss + l2_loss
+
+
+02-------------
+
+        # Model
+        self.rnn_hidden_size = 1000
+        self.conv_dropout = (0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.5)
+        self.rnn_dropout_out = 0.5
+        self.rnn_dropout_between = 0
+        self.clip = None
+        self.batch_norm = True
+        
+        # Training
+        self.epochs = 100
+        self.pin_mem = True
+        self.optim = {'opt': 'Adam', 'lr': 5e-4, 'weight_decay': 1e-4}
+        
+        # Pretrain, Resume training
+        self.pretrained_flownet = '/home/krkavinda/DeepVO-pytorch/FlowNet_models/pytorch/flownets_bn_EPE2.459.pth'
+        self.resume = False
+        self.resume_t_or_v = '.train'
+
+
+        # Modality flags
+        self.enable_rgb = True
+        self.enable_depth = True
+        self.enable_lidar = False
+        self.enable_imu = False
+        self.enable_gps = True

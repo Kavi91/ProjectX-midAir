@@ -1,5 +1,5 @@
 from params import par
-from model_2 import StereoAdaptiveVO  # Use the Mid-Air model
+from model_2 import StereoAdaptiveVO
 import numpy as np
 from PIL import Image
 import glob
@@ -9,6 +9,72 @@ import torch
 from data_helper import get_data_info, ImageSequenceDataset
 from torch.utils.data import DataLoader
 from helper import eulerAnglesToRotationMatrix
+import matplotlib.pyplot as plt
+
+def compute_mse(pred_traj, gt_traj):
+    """
+    Compute Mean Squared Error (MSE) between predicted and ground truth trajectories.
+    
+    Args:
+        pred_traj (np.ndarray): Predicted trajectory [N, 6] (roll, pitch, yaw, x, y, z).
+        gt_traj (np.ndarray): Ground truth trajectory [N, 6] (roll, pitch, yaw, x, y, z).
+    
+    Returns:
+        float: MSE value.
+    """
+    mse = np.mean((pred_traj - gt_traj) ** 2)
+    return mse
+
+def compute_ate(pred_traj, gt_traj):
+    """
+    Compute Absolute Trajectory Error (ATE) between predicted and ground truth trajectories.
+    ATE is the RMSE of the translation components after alignment.
+    
+    Args:
+        pred_traj (np.ndarray): Predicted trajectory [N, 6] (roll, pitch, yaw, x, y, z).
+        gt_traj (np.ndarray): Ground truth trajectory [N, 6] (roll, pitch, yaw, x, y, z).
+    
+    Returns:
+        float: ATE value.
+    """
+    # Extract translation components (x, y, z)
+    pred_trans = pred_traj[:, 3:]
+    gt_trans = gt_traj[:, 3:6]
+    
+    # Compute RMSE of translation errors
+    trans_errors = pred_trans - gt_trans
+    ate = np.sqrt(np.mean(np.sum(trans_errors ** 2, axis=1)))
+    return ate
+
+def plot_trajectories(pred_traj, gt_traj, climate, traj_id, save_dir):
+    """
+    Plot the predicted and ground truth trajectories and save the plot.
+    
+    Args:
+        pred_traj (np.ndarray): Predicted trajectory [N, 6] (roll, pitch, yaw, x, y, z).
+        gt_traj (np.ndarray): Ground truth trajectory [N, 6] (roll, pitch, yaw, x, y, z).
+        climate (str): Climate set (e.g., 'Kite_training/sunny').
+        traj_id (str): Trajectory ID (e.g., 'trajectory_0008').
+        save_dir (str): Directory to save the plot.
+    """
+    # Extract x, y coordinates for 2D plotting (North-East plane)
+    pred_x, pred_y = pred_traj[:, 3], pred_traj[:, 4]  # x (North), y (East)
+    gt_x, gt_y = gt_traj[:, 3], gt_traj[:, 4]  # x (North), y (East)
+
+    plt.figure(figsize=(10, 8))
+    plt.plot(pred_x, pred_y, label='Predicted Trajectory', color='blue', linestyle='--')
+    plt.plot(gt_x, gt_y, label='Ground Truth Trajectory', color='green', linestyle='-')
+    plt.xlabel('North (m)')
+    plt.ylabel('East (m)')
+    plt.title(f'Trajectory Comparison: {climate}/{traj_id}')
+    plt.legend()
+    plt.grid(True)
+    plt.axis('equal')  # Ensure equal scaling for x and y axes
+
+    # Save the plot
+    climate_sanitized = climate.replace('/', '_')
+    plt.savefig(f'{save_dir}/traj_{climate_sanitized}_{traj_id}.png')
+    plt.close()
 
 if __name__ == '__main__':    
     # Define the trajectories to test (Mid-Air dataset)
@@ -21,7 +87,7 @@ if __name__ == '__main__':
 
     # Path
     load_model_path = par.load_model_path  # Use the Mid-Air model path
-    save_dir = 'result/'  # Directory to save prediction answer
+    save_dir = 'result/'  # Directory to save prediction answer and plots
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -34,6 +100,9 @@ if __name__ == '__main__':
     else:
         M_deepvo.load_state_dict(torch.load(load_model_path, map_location={'cuda:0': 'cpu'}, weights_only=True))
     print('Load model from: ', load_model_path)
+
+    # Set model to evaluation mode
+    M_deepvo.eval()
 
     # Data
     n_workers = 1
@@ -78,81 +147,93 @@ if __name__ == '__main__':
         gt_pose = np.load(f'{par.pose_dir}/{climate}/poses/poses_{traj_num}.npy')  # (n_images, 6)
 
         # Predict
-        M_deepvo.eval()
         has_predict = False
-        answer = [[0.0] * 6]  # Initialize with the first absolute pose
         st_t = time.time()
         n_batch = len(dataloader)
+        all_pred_poses = []
 
-        for i, batch in enumerate(dataloader):
-            print('{} / {}'.format(i, n_batch), end='\r', flush=True)
-            _, (x_03, x_02, x_depth, x_imu, x_gps), y = batch  # Mid-Air dataset includes IMU and GPS
-            if use_cuda:
-                x_03 = x_03.cuda()
-                x_02 = x_02.cuda()
-                x_depth = x_depth.cuda()
-                x_imu = x_imu.cuda()
-                x_gps = x_gps.cuda()
-                y = y.cuda()
-            x = (x_03, x_02, x_depth, x_imu, x_gps)  # Construct the input tuple for StereoAdaptiveVO
-            batch_predict_pose = M_deepvo.forward(x)
+        with torch.no_grad():
+            for i, batch in enumerate(dataloader):
+                print('{} / {}'.format(i, n_batch), end='\r', flush=True)
+                _, (x_03, x_02, x_depth, x_imu, x_gps), y = batch  # Mid-Air dataset includes IMU and GPS
+                if use_cuda:
+                    x_03 = x_03.cuda()
+                    x_02 = x_02.cuda()
+                    x_depth = x_depth.cuda()
+                    x_imu = x_imu.cuda()
+                    x_gps = x_gps.cuda()
+                    y = y.cuda()
+                x = (x_03, x_02, x_depth, x_imu, x_gps)  # Construct the input tuple for StereoAdaptiveVO
+                batch_predict_pose = M_deepvo.forward(x)  # Shape: [batch_size, seq_len-1, 6]
 
-            # Record answer
-            fd.write('Batch: {}\n'.format(i))
-            for seq, predict_pose_seq in enumerate(batch_predict_pose):
-                for pose_idx, pose in enumerate(predict_pose_seq):
-                    fd.write(' {} {} {}\n'.format(seq, pose_idx, pose))
+                # Record answer
+                fd.write('Batch: {}\n'.format(i))
+                for seq, predict_pose_seq in enumerate(batch_predict_pose):
+                    for pose_idx, pose in enumerate(predict_pose_seq):
+                        fd.write(' {} {} {}\n'.format(seq, pose_idx, pose))
 
-            batch_predict_pose = batch_predict_pose.data.cpu().numpy()
-            if i == 0:
-                for pose in batch_predict_pose[0]:
-                    # Use all predicted poses in the first prediction
-                    for j in range(len(pose)):
-                        # Convert predicted relative pose to absolute pose by adding last pose
-                        pose[j] += answer[-1][j]
-                    answer.append(pose.tolist())
-                batch_predict_pose = batch_predict_pose[1:]
+                # Convert to numpy for processing
+                batch_predict_pose = batch_predict_pose.data.cpu()
+                all_pred_poses.append(batch_predict_pose)
 
-            # Transform from relative to absolute
-            for predict_pose_seq in batch_predict_pose:
-                ang = eulerAnglesToRotationMatrix([0, answer[-1][0], 0])
-                location = ang.dot(predict_pose_seq[-1][3:])
-                predict_pose_seq[-1][3:] = location[:]
+        # Concatenate all predicted relative poses
+        all_pred_poses = torch.cat(all_pred_poses, dim=0)  # Shape: [total_frames-1, seq_len-1, 6]
+        print("Shape of all_pred_poses before reshape:", all_pred_poses.shape)
 
-                # Use only the last predicted pose in the following prediction
-                last_pose = predict_pose_seq[-1]
-                for j in range(len(last_pose)):
-                    last_pose[j] += answer[-1][j]
-                # Normalize angle to -Pi...Pi over y axis
-                last_pose[0] = (last_pose[0] + np.pi) % (2 * np.pi) - np.pi
-                answer.append(last_pose.tolist())
+        # Reshape to combine the first two dimensions into a single sequence dimension
+        total_frames_minus_1 = all_pred_poses.shape[0] * all_pred_poses.shape[1]
+        all_pred_poses = all_pred_poses.view(total_frames_minus_1, 6)  # Shape: [total_frames-1, 6]
+        print("Shape of all_pred_poses after reshape:", all_pred_poses.shape)
 
-        print('len(answer): ', len(answer))
+        # Add batch dimension for compute_absolute_poses
+        all_pred_poses = all_pred_poses.unsqueeze(0)  # Shape: [1, total_frames-1, 6]
+        print("Shape of all_pred_poses after unsqueeze:", all_pred_poses.shape)
+
+        # Compute absolute poses from relative poses
+        absolute_poses = M_deepvo.compute_absolute_poses(all_pred_poses)  # Shape: [1, total_frames, 6]
+        print("Shape of absolute_poses:", absolute_poses.shape)
+        absolute_poses = absolute_poses.squeeze(0).numpy()  # Shape: [total_frames, 6]
+
+        # Adjust lengths to match ground truth
+        min_len = min(len(absolute_poses), len(gt_pose))
+        absolute_poses = absolute_poses[:min_len]
+        gt_pose = gt_pose[:min_len]
+
+        print('len(absolute_poses): ', len(absolute_poses))
         print('expect len: ', len(glob.glob(f'{par.image_dir}/{climate}/{test_traj_id}/image_rgb/*.JPEG')))
         print('Predict use {} sec'.format(time.time() - st_t))
 
-        # Save answer
+        # Save predicted absolute poses
         climate_sanitized = climate.replace('/', '_')
         with open(f'{save_dir}/out_{climate_sanitized}_{test_traj_id}.txt', 'w') as f:
-            for pose in answer:
-                if type(pose) == list:
-                    f.write(', '.join([str(p) for p in pose]))
-                else:
-                    f.write(str(pose))
+            for pose in absolute_poses:
+                f.write(', '.join([str(p) for p in pose]))
                 f.write('\n')
 
         # Calculate loss
-        gt_pose = np.load(f'{par.pose_dir}/{climate}/poses/poses_{traj_num}.npy')  # (n_images, 6)
         loss = 0
-        min_len = min(len(answer), len(gt_pose))
-        answer = answer[:min_len]
-        gt_pose = gt_pose[:min_len]
         for t in range(min_len):
-            angle_loss = np.sum((answer[t][:3] - gt_pose[t, :3]) ** 2)
-            translation_loss = np.sum((answer[t][3:] - gt_pose[t, 3:6]) ** 2)
-            loss += (100 * angle_loss + translation_loss)
+            angle_loss = np.sum((absolute_poses[t, :3] - gt_pose[t, :3]) ** 2)
+            translation_loss = np.sum((absolute_poses[t, 3:] - gt_pose[t, 3:6]) ** 2)
+            loss += (par.k_factor * angle_loss + translation_loss)
         loss /= min_len
         print('Loss = ', loss)
+
+        # Compute MSE and ATE
+        mse = compute_mse(absolute_poses, gt_pose)
+        ate = compute_ate(absolute_poses, gt_pose)
+        print(f'MSE = {mse:.4f}')
+        print(f'ATE = {ate:.4f}')
+
+        # Plot trajectories
+        plot_trajectories(absolute_poses, gt_pose, climate, test_traj_id, save_dir)
+
+        # Log metrics to file
+        with open(f'{save_dir}/metrics_{climate_sanitized}_{test_traj_id}.txt', 'w') as f:
+            f.write(f'Loss: {loss:.4f}\n')
+            f.write(f'MSE: {mse:.4f}\n')
+            f.write(f'ATE: {ate:.4f}\n')
+
         print('=' * 50)
 
     fd.close()

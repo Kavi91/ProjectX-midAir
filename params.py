@@ -33,7 +33,7 @@ class Parameters():
             'Kite_training/cloudy': ['trajectory_3008'],
             'Kite_training/foggy': ['trajectory_2008'],
             'Kite_training/sunny': ['trajectory_0008'],
-            'Kite_training/sunset': ['trajectory_1008'],
+            'Kite_training/sunset': ['trajectory_1008']
         }
         
         self.partition = None
@@ -68,16 +68,16 @@ class Parameters():
 
         # Model
         self.rnn_hidden_size = 1000
-        self.conv_dropout = (0.3, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2, 0.2, 0.5)
+        self.conv_dropout = (0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.5)
         self.rnn_dropout_out = 0.5
-        self.rnn_dropout_between = 0.2
-        self.clip = 1.0
+        self.rnn_dropout_between = 0
+        self.clip = None
         self.batch_norm = True
         
         # Training
         self.epochs = 100
         self.pin_mem = True
-        self.optim = {'opt': 'Adam', 'lr': 1e-4, 'weight_decay': 1e-4}
+        self.optim = {'opt': 'Adam', 'lr': 5e-4, 'weight_decay': 1e-4}
         
         # Pretrain, Resume training
         self.pretrained_flownet = '/home/krkavinda/DeepVO-pytorch/FlowNet_models/pytorch/flownets_bn_EPE2.459.pth'
@@ -87,10 +87,14 @@ class Parameters():
 
         # Modality flags
         self.enable_rgb = True
-        self.enable_depth = False
+        self.enable_depth = True
         self.enable_lidar = False
-        self.enable_imu = True
-        self.enable_gps = True
+        self.enable_imu = False
+        self.enable_gps = False
+
+        self.gps_loss_weight = 0.5
+        self.l2_lambda = 0.0001
+        self.k_factor = 100
 
         # Paths
         self.load_model_path = 'models/midair_im{}x{}_s{}x{}_b{}_rnn{}_{}.model{}'.format(
