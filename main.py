@@ -10,6 +10,7 @@ from model_2 import StereoAdaptiveVO
 from data_helper import get_data_info, SortedRandomBatchSampler, ImageSequenceDataset, get_partition_data_info
 import wandb
 from tqdm import tqdm
+from torch.cuda.amp import GradScaler, autocast  # Import AMP modules
 
 # Initialize WandB
 wandb.init(project="deepvo_training_midair", config=vars(par))
@@ -116,6 +117,8 @@ use_cuda = torch.cuda.is_available()
 if use_cuda:
     print('CUDA used.')
     M_deepvo = M_deepvo.cuda()
+else:
+    print('CUDA not used.')
 
 # Load FlowNet weights
 if par.pretrained_flownet and not par.resume:
@@ -128,6 +131,8 @@ if par.pretrained_flownet and not par.resume:
     update_dict = {k: v for k, v in pretrained_w['state_dict'].items() if k in model_dict}
     model_dict.update(update_dict)
     M_deepvo.load_state_dict(model_dict)
+else:
+    print('Skipping FlowNet model loading.')
 
 # Create optimizer
 if par.optim['opt'] == 'Adam':
@@ -150,6 +155,9 @@ if par.resume:
     optimizer.load_state_dict(torch.load(par.load_optimizer_path, weights_only=True))
     print('Load model from: ', par.load_model_path)
     print('Load optimizer from: ', par.load_optimizer_path)
+
+# Initialize GradScaler for mixed precision training
+scaler = GradScaler()
 
 # Train
 print('Record loss in: ', par.record_path)
@@ -180,7 +188,16 @@ for ep in range(par.epochs):
             if ep == 0 and batch_idx == 0:
                 print(f"Input shapes - t_x_03: {t_x_03.shape}, t_x_02: {t_x_02.shape}, ...")
             
-            ls = M_deepvo.step((t_x_03, t_x_02, t_x_depth, t_x_imu, t_x_gps), t_y, optimizer)
+            # Use autocast to enable mixed precision for the forward pass
+            with autocast():
+                ls = M_deepvo.step((t_x_03, t_x_02, t_x_depth, t_x_imu, t_x_gps), t_y, optimizer)
+            
+            # Scale the loss and perform backpropagation with GradScaler
+            scaler.scale(ls).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
+            
             ls = ls.data.cpu().numpy()
             t_loss_list.append(float(ls))
             loss_mean += float(ls)
@@ -203,7 +220,10 @@ for ep in range(par.epochs):
                 v_x_imu = v_x_imu.cuda(non_blocking=par.pin_mem)
                 v_x_gps = v_x_gps.cuda(non_blocking=par.pin_mem)
                 v_y = v_y.cuda(non_blocking=par.pin_mem)
-            v_ls = M_deepvo.get_loss((v_x_03, v_x_02, v_x_depth, v_x_imu, v_x_gps), v_y).data.cpu().numpy()
+            # Use autocast for validation as well
+            with autocast():
+                v_ls = M_deepvo.get_loss((v_x_03, v_x_02, v_x_depth, v_x_imu, v_x_gps), v_y)
+            v_ls = v_ls.data.cpu().numpy()
             v_loss_list.append(float(v_ls))
             loss_mean_valid += float(v_ls)
             vbar.set_postfix({'loss': f"{float(v_ls):.4f}"})

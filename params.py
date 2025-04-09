@@ -86,7 +86,7 @@ class Parameters():
 
 
         # Modality flags
-        self.enable_rgb = True
+        self.enable_rgb = False
         self.enable_depth = True
         self.enable_lidar = False
         self.enable_imu = False

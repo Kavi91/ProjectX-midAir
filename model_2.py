@@ -69,48 +69,62 @@ class CrossModalAttention(nn.Module):
         return out
 
 class AdaptiveGatedAttentionFusion(nn.Module):
-    def __init__(self, rgb_channels, depth_channels, lidar_channels=0, reduction=16):
+    def __init__(self, rgb_channels, depth_channels, lidar_channels=0, reduction=16, balanced_channels=1024):
         super(AdaptiveGatedAttentionFusion, self).__init__()
-        self.total_channels = rgb_channels + depth_channels + lidar_channels
         self.rgb_channels = rgb_channels
         self.depth_channels = depth_channels
         self.lidar_channels = lidar_channels
+        self.balanced_channels = balanced_channels  # Common channel dimension for balanced fusion
 
-        self.rgb_to_depth = CrossModalAttention(query_channels=rgb_channels, key_value_channels=depth_channels, num_heads=8, reduction=reduction) if rgb_channels > 0 and depth_channels > 0 else None
-        self.rgb_to_lidar = CrossModalAttention(query_channels=rgb_channels, key_value_channels=lidar_channels, num_heads=8, reduction=reduction) if rgb_channels > 0 and lidar_channels > 0 else None
-        self.depth_to_rgb = CrossModalAttention(query_channels=depth_channels, key_value_channels=rgb_channels, num_heads=8, reduction=reduction) if depth_channels > 0 and rgb_channels > 0 else None
-        self.depth_to_lidar = CrossModalAttention(query_channels=depth_channels, key_value_channels=lidar_channels, num_heads=8, reduction=reduction) if depth_channels > 0 and lidar_channels > 0 else None
-        self.lidar_to_rgb = CrossModalAttention(query_channels=lidar_channels, key_value_channels=rgb_channels, num_heads=8, reduction=reduction) if rgb_channels > 0 and lidar_channels > 0 else None
-        self.lidar_to_depth = CrossModalAttention(query_channels=lidar_channels, key_value_channels=depth_channels, num_heads=8, reduction=reduction) if depth_channels > 0 and lidar_channels > 0 else None
+        # Project RGB and depth features to a common channel dimension
+        self.rgb_projection = nn.Conv2d(rgb_channels, balanced_channels, kernel_size=1) if rgb_channels > 0 else None
+        self.depth_projection = nn.Conv2d(depth_channels, balanced_channels, kernel_size=1) if depth_channels > 0 else None
+        self.lidar_projection = nn.Conv2d(lidar_channels, balanced_channels, kernel_size=1) if lidar_channels > 0 else None
 
+        # Total channels after projection
+        self.total_channels = (balanced_channels if rgb_channels > 0 else 0) + \
+                              (balanced_channels if depth_channels > 0 else 0) + \
+                              (balanced_channels if lidar_channels > 0 else 0)
+
+        # Cross-modal attention with balanced channels
+        self.rgb_to_depth = CrossModalAttention(query_channels=balanced_channels, key_value_channels=balanced_channels, num_heads=8, reduction=reduction) if rgb_channels > 0 and depth_channels > 0 else None
+        self.rgb_to_lidar = CrossModalAttention(query_channels=balanced_channels, key_value_channels=balanced_channels, num_heads=8, reduction=reduction) if rgb_channels > 0 and lidar_channels > 0 else None
+        self.depth_to_rgb = CrossModalAttention(query_channels=balanced_channels, key_value_channels=balanced_channels, num_heads=8, reduction=reduction) if depth_channels > 0 and rgb_channels > 0 else None
+        self.depth_to_lidar = CrossModalAttention(query_channels=balanced_channels, key_value_channels=balanced_channels, num_heads=8, reduction=reduction) if depth_channels > 0 and lidar_channels > 0 else None
+        self.lidar_to_rgb = CrossModalAttention(query_channels=balanced_channels, key_value_channels=balanced_channels, num_heads=8, reduction=reduction) if rgb_channels > 0 and lidar_channels > 0 else None
+        self.lidar_to_depth = CrossModalAttention(query_channels=balanced_channels, key_value_channels=balanced_channels, num_heads=8, reduction=reduction) if depth_channels > 0 and lidar_channels > 0 else None
+
+        # Squeeze-and-Excitation for refined features (using balanced channels)
         self.se_rgb = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(rgb_channels, rgb_channels // reduction, kernel_size=1),
+            nn.Conv2d(balanced_channels, balanced_channels // reduction, kernel_size=1),
             nn.ReLU(),
-            nn.Conv2d(rgb_channels // reduction, rgb_channels, kernel_size=1),
+            nn.Conv2d(balanced_channels // reduction, balanced_channels, kernel_size=1),
             nn.Sigmoid()
         ) if rgb_channels > 0 else None
         self.se_depth = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(depth_channels, depth_channels // reduction, kernel_size=1),
+            nn.Conv2d(balanced_channels, balanced_channels // reduction, kernel_size=1),
             nn.ReLU(),
-            nn.Conv2d(depth_channels // reduction, depth_channels, kernel_size=1),
+            nn.Conv2d(balanced_channels // reduction, balanced_channels, kernel_size=1),
             nn.Sigmoid()
         ) if depth_channels > 0 else None
         self.se_lidar = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(lidar_channels, lidar_channels // reduction, kernel_size=1),
+            nn.Conv2d(balanced_channels, balanced_channels // reduction, kernel_size=1),
             nn.ReLU(),
-            nn.Conv2d(lidar_channels // reduction, lidar_channels, kernel_size=1),
+            nn.Conv2d(balanced_channels // reduction, balanced_channels, kernel_size=1),
             nn.Sigmoid()
         ) if lidar_channels > 0 else None
 
-        gate_input_channels = sum([c for c in [rgb_channels, depth_channels, lidar_channels] if c > 0]) + 3
+        # Gating mechanism
+        gate_input_channels = self.total_channels + 3
         self.gate = nn.Sequential(
             nn.Conv2d(gate_input_channels, 3, kernel_size=1),
             nn.Sigmoid()
         ) if gate_input_channels > 3 else None
 
+        # Final fusion layer
         self.fusion = nn.Conv2d(self.total_channels, self.total_channels, kernel_size=1) if self.total_channels > 0 else None
 
     def forward(self, rgb_features, depth_features, lidar_features=None):
@@ -129,18 +143,25 @@ class AdaptiveGatedAttentionFusion(nn.Module):
         else:
             raise ValueError("At least one modality must be active.")
 
-        active_features = []
+        # Project features to balanced channel dimension
         if self.rgb_channels > 0:
-            active_features.append(rgb_features)
+            rgb_features = self.rgb_projection(rgb_features)  # Shape: [batch_size, balanced_channels, H, W]
+            # Normalize feature magnitudes
+            rgb_features = F.normalize(rgb_features, p=2, dim=1)
         if self.depth_channels > 0:
-            active_features.append(depth_features)
+            depth_features = self.depth_projection(depth_features)  # Shape: [batch_size, balanced_channels, H, W]
+            # Normalize feature magnitudes
+            depth_features = F.normalize(depth_features, p=2, dim=1)
             if depth_features.size()[2:] != (ref_h, ref_w):
                 depth_features = F.interpolate(depth_features, size=(ref_h, ref_w), mode='bilinear', align_corners=False)
         if self.lidar_channels > 0 and lidar_features is not None:
-            active_features.append(lidar_features)
+            lidar_features = self.lidar_projection(lidar_features)  # Shape: [batch_size, balanced_channels, H, W]
+            # Normalize feature magnitudes
+            lidar_features = F.normalize(lidar_features, p=2, dim=1)
             if lidar_features.size()[2:] != (ref_h, ref_w):
                 lidar_features = F.interpolate(lidar_features, size=(ref_h, ref_w), mode='bilinear', align_corners=False)
 
+        # Cross-modal attention
         rgb_cross = rgb_features if self.rgb_channels > 0 else None
         if self.rgb_to_depth and rgb_cross is not None and self.depth_channels > 0:
             rgb_cross = rgb_cross + self.rgb_to_depth(rgb_features, depth_features, depth_features)
@@ -159,10 +180,12 @@ class AdaptiveGatedAttentionFusion(nn.Module):
         if self.lidar_to_depth and lidar_cross is not None and self.depth_channels > 0:
             lidar_cross = lidar_cross + self.lidar_to_depth(lidar_features, depth_features, depth_features)
 
+        # Squeeze-and-Excitation for refined features
         rgb_refined = rgb_cross * self.se_rgb(rgb_cross) if self.se_rgb and rgb_cross is not None else rgb_cross
         depth_refined = depth_cross * self.se_depth(depth_cross) if self.se_depth and depth_cross is not None else depth_cross
         lidar_refined = lidar_cross * self.se_lidar(lidar_cross) if self.se_lidar and lidar_cross is not None else lidar_cross
 
+        # Compute quality metrics
         quality_metrics = []
         device = rgb_features.device if rgb_features is not None else depth_features.device if depth_features is not None else lidar_features.device
         dummy_metric = torch.zeros(batch_size, 1, ref_h, ref_w, device=device)
@@ -187,6 +210,7 @@ class AdaptiveGatedAttentionFusion(nn.Module):
         
         quality_metrics = torch.cat(quality_metrics, dim=1)
 
+        # Gating mechanism
         features_to_concat = [f for f in [rgb_refined, depth_refined, lidar_refined] if f is not None]
         if not features_to_concat:
             raise ValueError("No features to concatenate for fusion.")
@@ -318,12 +342,18 @@ class StereoAdaptiveVO(DeepVO):
         
         # Depth processing (only if enabled)
         if par.enable_depth:
-            self.depth_conv1 = conv(self.batchNorm, 2, 32, kernel_size=7, stride=2, dropout=par.conv_dropout[0])
-            self.depth_conv2 = conv(self.batchNorm, 32, 64, kernel_size=5, stride=2, dropout=par.conv_dropout[1])
-            self.depth_conv3 = conv(self.batchNorm, 64, 128, kernel_size=5, stride=2, dropout=par.conv_dropout[2])
-            self.depth_conv4 = conv(self.batchNorm, 128, 256, kernel_size=3, stride=2, dropout=par.conv_dropout[4])
+            self.depth_conv1 = conv(self.batchNorm, 2, 64, kernel_size=7, stride=2, dropout=par.conv_dropout[0])
+            self.depth_conv2 = conv(self.batchNorm, 64, 128, kernel_size=5, stride=2, dropout=par.conv_dropout[1])
+            self.depth_conv3 = conv(self.batchNorm, 128, 256, kernel_size=5, stride=2, dropout=par.conv_dropout[2])
+            self.depth_conv3_1 = conv(self.batchNorm, 256, 256, kernel_size=3, stride=1, dropout=par.conv_dropout[3])
+            self.depth_conv4 = conv(self.batchNorm, 256, 512, kernel_size=3, stride=2, dropout=par.conv_dropout[4])
+            self.depth_conv4_1 = conv(self.batchNorm, 512, 512, kernel_size=3, stride=1, dropout=par.conv_dropout[5])
+            self.depth_conv5 = conv(self.batchNorm, 512, 512, kernel_size=3, stride=2, dropout=par.conv_dropout[6])
+            self.depth_conv5_1 = conv(self.batchNorm, 512, 512, kernel_size=3, stride=1, dropout=par.conv_dropout[7])
+            self.depth_conv6 = conv(self.batchNorm, 512, 1024, kernel_size=3, stride=2, dropout=par.conv_dropout[8])
         else:
-            self.depth_conv1 = self.depth_conv2 = self.depth_conv3 = self.depth_conv4 = None
+            self.depth_conv1 = self.depth_conv2 = self.depth_conv3 = self.depth_conv3_1 = self.depth_conv4 = \
+            self.depth_conv4_1 = self.depth_conv5 = self.depth_conv5_1 = self.depth_conv6 = None
         
         # IMU and GPS processing (input size is 12 due to pairing of consecutive frames)
         self.imu_mlp = nn.Sequential(
@@ -374,7 +404,7 @@ class StereoAdaptiveVO(DeepVO):
                 if par.enable_depth:
                     __tmp_depth = Variable(torch.zeros(1, 2, imsize1, imsize2))
                     __tmp_depth = self.encode_depth(__tmp_depth)
-                    depth_channels = __tmp_depth.size(1)
+                    depth_channels = __tmp_depth.size(1) * 2 if par.enable_depth else 0  # Multiply by 2 for paired frames
                     depth_h, depth_w = __tmp_depth.size(2), __tmp_depth.size(3)
                 else:
                     depth_channels = 0
@@ -393,14 +423,14 @@ class StereoAdaptiveVO(DeepVO):
                 if par.enable_depth:
                     __tmp_depth = Variable(torch.zeros(1, 2, imsize1, imsize2))
                     __tmp_depth = self.encode_depth(__tmp_depth)
-                    depth_channels = __tmp_depth.size(1)
+                    depth_channels = __tmp_depth.size(1) * 2 if par.enable_depth else 0  # Multiply by 2 for paired frames
                     depth_h, depth_w = __tmp_depth.size(2), __tmp_depth.size(3)
-                    depth_feature_size = int(np.prod(__tmp_depth.size()))
+                    depth_feature_size = int(np.prod(__tmp_depth.size())) * 2
                 else:
                     depth_channels = 0
                     depth_h, depth_w = rgb_h, rgb_w
                     depth_feature_size = 0
-                print(f"Computed depth feature size: {depth_feature_size} (channels: {depth_channels}, H: {depth_h}, W: {rgb_w})")
+                print(f"Computed depth feature size: {depth_feature_size} (channels: {depth_channels}, H: {depth_h}, W: {depth_w})")
                 
                 lidar_channels = 0
                 lidar_h, lidar_w = rgb_h, rgb_w
@@ -443,14 +473,14 @@ class StereoAdaptiveVO(DeepVO):
             if par.enable_depth:
                 __tmp_depth = Variable(torch.zeros(1, 2, imsize1, imsize2))
                 __tmp_depth = self.encode_depth(__tmp_depth)
-                depth_channels = __tmp_depth.size(1)
+                depth_channels = __tmp_depth.size(1) * 2 if par.enable_depth else 0  # Multiply by 2 for paired frames
                 depth_h, depth_w = __tmp_depth.size(2), __tmp_depth.size(3)
-                depth_feature_size = int(np.prod(__tmp_depth.size()))
+                depth_feature_size = int(np.prod(__tmp_depth.size())) * 2
             else:
                 depth_channels = 0
                 depth_h, depth_w = rgb_h, rgb_w
                 depth_feature_size = 0
-            print(f"Computed depth feature size: {depth_feature_size} (channels: {depth_channels}, H: {depth_h}, W: {rgb_w})")
+            print(f"Computed depth feature size: {depth_feature_size} (channels: {depth_channels}, H: {depth_h}, W: {depth_w})")
             
             lidar_channels = 0
             lidar_h, lidar_w = rgb_h, rgb_w
@@ -511,9 +541,11 @@ class StereoAdaptiveVO(DeepVO):
         if not par.enable_depth:
             raise ValueError("Depth encoding called but depth is disabled.")
         out_conv2 = self.depth_conv2(self.depth_conv1(x))
-        out_conv3 = self.depth_conv3(out_conv2)
-        out_conv4 = self.depth_conv4(out_conv3)
-        return out_conv4
+        out_conv3 = self.depth_conv3_1(self.depth_conv3(out_conv2))
+        out_conv4 = self.depth_conv4_1(self.depth_conv4(out_conv3))
+        out_conv5 = self.depth_conv5_1(self.depth_conv5(out_conv4))
+        out_conv6 = self.depth_conv6(out_conv5)
+        return out_conv6
 
     def compute_absolute_poses(self, relative_poses):
         """
@@ -604,7 +636,9 @@ class StereoAdaptiveVO(DeepVO):
         features_02 = self.encode_image(x_02) if par.enable_rgb else None
         rgb_features = torch.cat((features_03, features_02), dim=1) if par.enable_rgb else None
         
-        depth_features = self.encode_depth(x_depth) if par.enable_depth else None
+        depth_features_1 = self.encode_depth(x_depth) if par.enable_depth else None
+        depth_features_2 = self.encode_depth(x_depth) if par.enable_depth else None
+        depth_features = torch.cat((depth_features_1, depth_features_2), dim=1) if par.enable_depth else None
         
         fused_features = self.fusion_module(rgb_features, depth_features, None)  # No LiDAR
         fused_features = fused_features.view(batch_size, new_seq_len, -1)
@@ -670,8 +704,10 @@ class StereoAdaptiveVO(DeepVO):
             stats_pickle_path = "datainfo/dataset_stats.pickle"
             with open(stats_pickle_path, 'rb') as f:
                 stats = pickle.load(f)
+            gps_pos_mean = torch.tensor(stats['gps_pos_mean'], device=gps_rel_pos.device)
             gps_pos_std = torch.tensor(stats['gps_pos_std'], device=gps_rel_pos.device)
-            gps_rel_pos = gps_rel_pos * gps_pos_std  # Only scale by std, as mean cancels out in differences
+            gps_pos = gps_pos * gps_pos_std + gps_pos_mean  # Denormalize absolute positions
+            gps_rel_pos = gps_rel_pos * gps_pos_std  # Denormalize relative positions
 
             # Compare predicted relative translations with GPS relative positions
             predicted_trans = predicted[:, :, 3:]  # [batch_size, seq_len-1, 3]
@@ -680,6 +716,12 @@ class StereoAdaptiveVO(DeepVO):
             # Weight the GPS loss
             gps_loss_weight = par.gps_loss_weight
             gps_loss = gps_loss_weight * gps_loss
+
+            # Additional loss term: align absolute poses with GPS positions
+            absolute_poses = self.compute_absolute_poses(predicted)[:, 1:, :]  # [batch_size, seq_len, 6]
+            gps_pos_trimmed = gps_pos[:, 1:, :]  # [batch_size, seq_len-1, 3]
+            gps_absolute_loss = torch.nn.functional.mse_loss(absolute_poses[:, :, 3:], gps_pos_trimmed)
+            gps_loss += gps_loss_weight * gps_absolute_loss  # Add absolute position loss
 
         # Total loss
         total_loss = base_loss + gps_loss
