@@ -13,41 +13,59 @@ class Parameters():
         
         # Mid-Air climate sets
         self.climate_sets = [
-            'Kite_training/cloudy', 'Kite_training/foggy', 'Kite_training/sunny', 'Kite_training/sunset'
+            'Kite_training/cloudy', 'Kite_training/foggy', 'Kite_training/sunny', 'Kite_training/sunset',
+            'PLE_training/fall', 'PLE_training/spring', 'PLE_training/winter',
+            'VO_test/foggy', 'VO_test/sunny', 'VO_test/sunset' 
         ]
         
         # Specific trajectory IDs for training, validation, and test
+        # Training split: three trajectories per condition
+        # Inter-Trajectory splits using distinct trajectories per set:
         self.train_traj_ids = {
-            #'Kite_training/cloudy': ['trajectory_3000', 'trajectory_3001', 'trajectory_3002', 'trajectory_3003', 'trajectory_3004', 'trajectory_3005', 'trajectory_3006'],
-            #'Kite_training/foggy': ['trajectory_2000', 'trajectory_2001', 'trajectory_2002', 'trajectory_2003', 'trajectory_2004', 'trajectory_2005', 'trajectory_2006'],
-            'Kite_training/sunny': ['trajectory_0000', 'trajectory_0001', 'trajectory_0002', 'trajectory_0003', 'trajectory_0004', 'trajectory_0005', 'trajectory_0006']
-            #'Kite_training/sunset': ['trajectory_1000', 'trajectory_1001', 'trajectory_1002', 'trajectory_1003', 'trajectory_1004', 'trajectory_1005', 'trajectory_1006']
+            'Kite_training/cloudy': ['trajectory_3000'],
+            'Kite_training/foggy':  ['trajectory_2000'],
+            'Kite_training/sunny':  ['trajectory_0000'],
+            'Kite_training/sunset': ['trajectory_1000'],
+            'PLE_training/spring':  ['trajectory_5000'],
+            'PLE_training/fall':    ['trajectory_4000'],
+            'PLE_training/winter':  ['trajectory_6000'],
         }
+
         self.valid_traj_ids = {
-            #'Kite_training/cloudy': ['trajectory_3007', 'trajectory_3008'],
-            #'Kite_training/foggy': ['trajectory_2007', 'trajectory_2008'],
-            'Kite_training/sunny': ['trajectory_0007', 'trajectory_0009']
-            #'Kite_training/sunset': ['trajectory_1007', 'trajectory_1008']
+            'Kite_training/cloudy': ['trajectory_3004'],
+            'Kite_training/foggy':  ['trajectory_2004'],
+            'Kite_training/sunny':  ['trajectory_0004'],
+            'Kite_training/sunset': ['trajectory_1004'],
+            'PLE_training/spring':  ['trajectory_5004'],
         }
+
         self.test_traj_ids = {
-            'Kite_training/cloudy': ['trajectory_3008'],
-            'Kite_training/foggy': ['trajectory_2008'],
-            'Kite_training/sunny': ['trajectory_0008'],
-            'Kite_training/sunset': ['trajectory_1008']
+            'Kite_training/cloudy': ['trajectory_3006'],
+            'Kite_training/foggy':  ['trajectory_2006'],
+            'Kite_training/sunny':  ['trajectory_0006'],
+            'Kite_training/sunset': ['trajectory_1006'],
+            'PLE_training/spring':  ['trajectory_5006'],
         }
+
+
         
         self.partition = None
         
         # Data Preprocessing
+        #self.resize_mode = 'rescale'
+        #self.img_w = 608
+        #self.img_h = 184
+
         self.resize_mode = 'rescale'
-        self.img_w = 608
-        self.img_h = 184
+        self.img_w = 400  # Reduced from 512
+        self.img_h = 300  # Reduced from 384
+
         self.img_means_03 = (0.5029287934303284, 0.49763786792755127, 0.3706325888633728)
         self.img_stds_03 = (0.255334734916687, 0.23501254618167877, 0.2485671192407608)
         self.img_means_02 = (0.502440869808197, 0.49729645252227783, 0.37063950300216675)
         self.img_stds_02 = (0.2558165192604065, 0.23529765009880066, 0.24865560233592987)
-        self.depth_mean = 24.101730346679688
-        self.depth_std = 5.1569013595581055
+        #self.depth_mean = 24.101730346679688
+        #self.depth_std = 5.1569013595581055
         self.depth_max = 100.0
         self.minus_point_5 = True
 
@@ -69,7 +87,7 @@ class Parameters():
         # Model
         self.rnn_hidden_size = 1000
         self.conv_dropout = (0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.5)
-        self.rnn_dropout_out = 0.5
+        self.rnn_dropout_out = 0.7
         self.rnn_dropout_between = 0
         self.clip = None
         self.batch_norm = True
@@ -77,7 +95,7 @@ class Parameters():
         # Training
         self.epochs = 100
         self.pin_mem = True
-        self.optim = {'opt': 'Adam', 'lr': 5e-4, 'weight_decay': 1e-4}
+        self.optim = {'opt': 'Adam', 'lr': 1e-4, 'weight_decay': 1e-4}
         
         # Pretrain, Resume training
         self.pretrained_flownet = '/home/krkavinda/DeepVO-pytorch/FlowNet_models/pytorch/flownets_bn_EPE2.459.pth'
@@ -86,7 +104,7 @@ class Parameters():
 
 
         # Modality flags
-        self.enable_rgb = False
+        self.enable_rgb = True
         self.enable_depth = True
         self.enable_lidar = False
         self.enable_imu = False

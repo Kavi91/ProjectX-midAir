@@ -188,15 +188,24 @@ for ep in range(par.epochs):
             if ep == 0 and batch_idx == 0:
                 print(f"Input shapes - t_x_03: {t_x_03.shape}, t_x_02: {t_x_02.shape}, ...")
             
+            # Clear gradients before each step
+            optimizer.zero_grad()
+            
             # Use autocast to enable mixed precision for the forward pass
             with autocast():
                 ls = M_deepvo.step((t_x_03, t_x_02, t_x_depth, t_x_imu, t_x_gps), t_y, optimizer)
             
             # Scale the loss and perform backpropagation with GradScaler
             scaler.scale(ls).backward()
+            
+            # Apply gradient clipping if specified
+            if M_deepvo.clip is not None:
+                scaler.unscale_(optimizer)  # Unscale gradients before clipping
+                torch.nn.utils.clip_grad_norm_(M_deepvo.rnn.parameters(), M_deepvo.clip)
+            
+            # Update optimizer and scaler
             scaler.step(optimizer)
             scaler.update()
-            optimizer.zero_grad()
             
             ls = ls.data.cpu().numpy()
             t_loss_list.append(float(ls))

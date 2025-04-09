@@ -328,12 +328,9 @@ class DeepVO(nn.Module):
         return loss
 
     def step(self, x, y, optimizer):
-        optimizer.zero_grad()
+        # Remove optimizer.zero_grad(), backward(), and optimizer.step()
+        # These will be handled in main.py with mixed precision
         loss = self.get_loss(x, y)
-        loss.backward()
-        if self.clip is not None:
-            torch.nn.utils.clip_grad_norm_(self.rnn.parameters(), self.clip)
-        optimizer.step()
         return loss
 
 class StereoAdaptiveVO(DeepVO):
@@ -728,10 +725,7 @@ class StereoAdaptiveVO(DeepVO):
         return total_loss
 
     def step(self, x, y, optimizer):
-        optimizer.zero_grad()
+        # Remove optimizer.zero_grad(), backward(), and optimizer.step()
+        # These will be handled in main.py with mixed precision
         loss = self.get_loss(x, y)
-        loss.backward()
-        if self.clip is not None:
-            torch.nn.utils.clip_grad_norm_(self.rnn.parameters(), self.clip)
-        optimizer.step()
         return loss
