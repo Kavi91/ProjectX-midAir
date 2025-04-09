@@ -318,8 +318,13 @@ class ImageSequenceDataset(Dataset):
                             depth_map = depth_float16.astype(np.float32)  # Shape: [H, W]
                             # Apply scaling factor to convert to meters (assuming depth values are scaled to [0, 65535])
                             depth_map = depth_map * (self.depth_max / 65535.0)  # Scale to [0, depth_max]
+<<<<<<< HEAD
                             #if index < 5:  # Log first 5 depth maps for debugging
                                 #print(f"Sample depth map {index}: min={depth_map.min():.4f}, max={depth_map.max():.4f}, mean={depth_map.mean():.4f}")
+=======
+                            if index < 5:  # Log first 5 depth maps for debugging
+                                print(f"Sample depth map {index}: min={depth_map.min():.4f}, max={depth_map.max():.4f}, mean={depth_map.mean():.4f}")
+>>>>>>> aabbfb9ee15b5ee4ea12c4edf7c3ba7b53ae33aa
                             depth_values.extend(depth_map.flatten())
                 depth_values = np.array(depth_values)
                 depth_values = depth_values[depth_values > 0]  # Exclude zero values (invalid depth)
