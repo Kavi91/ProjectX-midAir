@@ -7,10 +7,10 @@ import pandas as pd
 import pickle
 from params import par
 from model_2 import StereoAdaptiveVO
-from data_helper import get_data_info, SortedRandomBatchSampler, ImageSequenceDataset, get_partition_data_info
+from data_helper import get_data_info, SortedRandomBatchSampler, ImageSequenceDataset
 import wandb
 from tqdm import tqdm
-from torch.amp import GradScaler, autocast  # Updated import for AMP modules
+from torch.amp import GradScaler, autocast
 
 # Initialize WandB
 wandb.init(project="deepvo_training_midair", config=vars(par))
@@ -35,35 +35,29 @@ if os.path.isfile(par.train_data_info_path) and os.path.isfile(par.valid_data_in
     valid_df = pd.read_pickle(par.valid_data_info_path)
 else:
     print('Create new data info')
-    if par.partition is not None:
-        train_df, valid_df = get_partition_data_info(
-            par.partition, par.climate_sets, par.seq_len, overlap=par.overlap, 
-            sample_times=par.sample_times, shuffle=True, sort=True
-        )
-    else:
-        train_df, valid_df = get_data_info(
-            climate_sets=par.climate_sets, seq_len_range=par.seq_len, overlap=par.overlap,
-            sample_times=par.sample_times, shuffle=True, sort=True, include_test=False
-        )
+    train_df, valid_df = get_data_info(
+        climate_sets=par.climate_sets, seq_len=par.seq_len, overlap=par.overlap,
+        sample_times=par.sample_times, shuffle=True, sort=True, include_test=False
+    )
     train_df.to_pickle(par.train_data_info_path)
     valid_df.to_pickle(par.valid_data_info_path)
 
 train_sampler = SortedRandomBatchSampler(train_df, par.batch_size, drop_last=True)
 train_dataset = ImageSequenceDataset(
     train_df, par.resize_mode, (par.img_h, par.img_w), par.img_means_03, par.img_stds_03,
-    par.img_means_02, par.img_stds_02, par.minus_point_5
+    par.img_means_02, par.img_stds_02, par.minus_point_5, is_training=True
 )
 train_dl = DataLoader(
-    train_dataset, batch_sampler=train_sampler, num_workers=24, pin_memory=par.pin_mem
+    train_dataset, batch_sampler=train_sampler, num_workers=8, pin_memory=par.pin_mem  # Reduced num_workers
 )
 
 valid_sampler = SortedRandomBatchSampler(valid_df, par.batch_size, drop_last=True)
 valid_dataset = ImageSequenceDataset(
     valid_df, par.resize_mode, (par.img_h, par.img_w), par.img_means_03, par.img_stds_03,
-    par.img_means_02, par.img_stds_02, par.minus_point_5
+    par.img_means_02, par.img_stds_02, par.minus_point_5, is_training=False
 )
 valid_dl = DataLoader(
-    valid_dataset, batch_sampler=valid_sampler, num_workers=24, pin_memory=par.pin_mem
+    valid_dataset, batch_sampler=valid_sampler, num_workers=8, pin_memory=par.pin_mem
 )
 
 # Load or compute dataset sizes
@@ -141,18 +135,12 @@ if par.pretrained_flownet and not par.resume:
 else:
     print('Skipping FlowNet model loading.')
 
-# Create optimizer
-if par.optim['opt'] == 'Adam':
-    optimizer = torch.optim.Adam(M_deepvo.parameters(), lr=par.optim['lr'], weight_decay=par.optim.get('weight_decay', 0))
-elif par.optim['opt'] == 'Adagrad':
-    optimizer = torch.optim.Adagrad(M_deepvo.parameters(), lr=par.optim['lr'], weight_decay=par.optim.get('weight_decay', 0))
-elif par.optim['opt'] == 'Cosine':
-    optimizer = torch.optim.SGD(M_deepvo.parameters(), lr=par.optim['lr'], weight_decay=par.optim.get('weight_decay', 0))
-    T_iter = par.optim['T'] * len(train_dl)
-    # No scheduler needed, so we remove this part
+# Create optimizer and scheduler
+optimizer = torch.optim.Adam(M_deepvo.parameters(), lr=par.optim['lr'], weight_decay=par.optim.get('weight_decay', 0))
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=par.epochs, eta_min=1e-6)
 
 # Initialize GradScaler for mixed precision training
-scaler = GradScaler('cuda')  # Updated syntax for GradScaler
+scaler = GradScaler()
 
 # Train
 print('Record loss in: ', par.record_path)
@@ -215,8 +203,7 @@ for ep in range(par.epochs):
                 v_x_imu = v_x_imu.cuda(non_blocking=par.pin_mem)
                 v_x_gps = v_x_gps.cuda(non_blocking=par.pin_mem)
                 v_y = v_y.cuda(non_blocking=par.pin_mem)
-            # Use autocast for validation as well
-            with autocast(device_type='cuda', enabled=True):  # Updated syntax for autocast
+            with autocast(device_type='cuda', enabled=True):
                 v_ls = M_deepvo.get_loss((v_x_03, v_x_02, v_x_depth, v_x_imu, v_x_gps), v_y)
             v_ls = v_ls.data.cpu().numpy()
             v_loss_list.append(float(v_ls))
@@ -225,6 +212,9 @@ for ep in range(par.epochs):
     valid_time = time.time() - valid_start_time
     print('Valid take {:.1f} sec'.format(valid_time))
     loss_mean_valid /= len(valid_dl)
+
+    # Update learning rate
+    scheduler.step()
 
     # ETA calculation
     epoch_time = time.time() - epoch_start_time
@@ -236,7 +226,7 @@ for ep in range(par.epochs):
 
     # Get current learning rate
     current_lr = optimizer.param_groups[0]['lr']
-    print(f"Learning rate: {current_lr}")  # Log the learning rate (now constant)
+    print(f"Learning rate: {current_lr}")
 
     # Log to WandB
     wandb.log({
