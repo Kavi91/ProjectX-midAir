@@ -15,7 +15,7 @@ from helper import normalize_angle_delta, euler_to_rotation_matrix, to_ned_pose
 def get_data_info(climate_sets, seq_len, overlap, sample_times=1, pad_y=False, shuffle=False, sort=True, include_test=False):
     all_traj_info = []
     for climate_set in climate_sets:
-        traj_list = [d for d in os.listdir(f"/media/krkavinda/New Volume/Mid-Air-Dataset/MidAir_processed/{climate_set}/") if d.startswith("trajectory_")]
+        traj_list = [d for d in os.listdir(f"{par.data_dir}/{climate_set}/") if d.startswith("trajectory_")]
         traj_list.sort()
         print(f"Climate set {climate_set}: {len(traj_list)} total trajectories available")
         all_traj_info.extend([(climate_set, traj) for traj in traj_list])
@@ -25,10 +25,6 @@ def get_data_info(climate_sets, seq_len, overlap, sample_times=1, pad_y=False, s
     test_traj_info = []
     
     for climate_set in climate_sets:
-        train_ids = set(par.train_traj_ids.get(climate_set, []))
-        valid_ids = set(par.valid_traj_ids.get(climate_set, []))
-        test_ids = set(par.test_traj_ids.get(climate_set, [])) if include_test else set()
-        
         for traj in par.train_traj_ids.get(climate_set, []):
             if (climate_set, traj) in all_traj_info:
                 train_traj_info.append((climate_set, traj))
@@ -55,15 +51,11 @@ def get_data_info(climate_sets, seq_len, overlap, sample_times=1, pad_y=False, s
         test_count = len([t for cs, t in test_traj_info if cs == climate_set])
         print(f"Climate set {climate_set}: Train={train_count}, Valid={valid_count}, Test={test_count}")
 
-    train_set = set((cs, t) for cs, t in train_traj_info)
-    valid_set = set((cs, t) for cs, t in valid_traj_info)
-    test_set = set((cs, t) for cs, t in test_traj_info)
+    train_set = set(train_traj_info)
+    valid_set = set(valid_traj_info)
+    test_set = set(test_traj_info)
     if train_set & valid_set or (include_test and (train_set & test_set or valid_set & test_set)):
         print("Error: Overlap detected between sets!")
-        print(f"Train-Valid overlap: {train_set & valid_set}")
-        if include_test:
-            print(f"Train-Test overlap: {train_set & test_set}")
-            print(f"Valid-Test overlap: {valid_set & test_set}")
         raise ValueError("Trajectory overlap detected!")
     else:
         print("No overlap between training, validation, and test trajectories.")
@@ -72,7 +64,7 @@ def get_data_info(climate_sets, seq_len, overlap, sample_times=1, pad_y=False, s
         for climate_set, traj in traj_info:
             start_t = time.time()
             traj_id = traj.split('_')[1]
-            poses_path = f"/media/krkavinda/New Volume/Mid-Air-Dataset/MidAir_processed/{climate_set}/poses/poses_{traj_id}.npy"
+            poses_path = f"{par.data_dir}/{climate_set}/poses/poses_{traj_id}.npy"
             if not os.path.exists(poses_path):
                 print(f"Poses file not found for {climate_set}/{traj}, skipping.")
                 continue
@@ -81,14 +73,14 @@ def get_data_info(climate_sets, seq_len, overlap, sample_times=1, pad_y=False, s
             poses = torch.tensor(poses, dtype=torch.float32)
             poses = to_ned_pose(poses, is_absolute=True).numpy()
             
-            fpaths_03 = glob.glob(f'/media/krkavinda/New Volume/Mid-Air-Dataset/MidAir_processed/{climate_set}/{traj}/image_rgb/*.JPEG')
-            fpaths_02 = glob.glob(f'/media/krkavinda/New Volume/Mid-Air-Dataset/MidAir_processed/{climate_set}/{traj}/image_rgb_right/*.JPEG')
+            fpaths_03 = glob.glob(f'{par.data_dir}/{climate_set}/{traj}/image_rgb/*.JPEG')
+            fpaths_02 = glob.glob(f'{par.data_dir}/{climate_set}/{traj}/image_rgb_right/*.JPEG')
             fpaths_03.sort()
             fpaths_02.sort()
 
-            fpaths_depth = glob.glob(f'/media/krkavinda/New Volume/Mid-Air-Dataset/MidAir_processed/{climate_set}/{traj}/depth/*.PNG') if par.enable_depth else []
-            fpaths_imu = f'/media/krkavinda/New Volume/Mid-Air-Dataset/MidAir_processed/{climate_set}/{traj}/imu.npy' if par.enable_imu else None
-            fpaths_gps = f'/media/krkavinda/New Volume/Mid-Air-Dataset/MidAir_processed/{climate_set}/{traj}/gps.npy' if par.enable_gps else None
+            fpaths_depth = glob.glob(f'{par.data_dir}/{climate_set}/{traj}/depth/*.PNG') if par.enable_depth else []
+            fpaths_imu = f'{par.data_dir}/{climate_set}/{traj}/imu.npy' if par.enable_imu else None
+            fpaths_gps = f'{par.data_dir}/{climate_set}/{traj}/gps.npy' if par.enable_gps else None
             if par.enable_depth:
                 fpaths_depth.sort()
 
@@ -124,7 +116,7 @@ def get_data_info(climate_sets, seq_len, overlap, sample_times=1, pad_y=False, s
             
             for st in start_frames:
                 n_frames = len(fpaths_03) - st
-                jump = seq_len - int(overlap)
+                jump = seq_len - overlap
                 num_sequences = (n_frames - seq_len) // jump + 1
                 print(f"Climate set {climate_set}, Trajectory {traj}: Generating {num_sequences} sequences")
                 x_segs_03, x_segs_02, x_segs_depth, x_segs_imu, x_segs_gps, y_segs = [], [], [], [], [], []
@@ -153,7 +145,7 @@ def get_data_info(climate_sets, seq_len, overlap, sample_times=1, pad_y=False, s
                 data_dict['X_path_imu'] += x_segs_imu
                 data_dict['X_path_gps'] += x_segs_gps
                 data_dict['X_len'] += [len(xs) for xs in x_segs_03]
-            print(f'Climate set {climate_set}, Trajectory {traj} finished in {time.time() - start_t} sec')
+            print(f'Climate set {climate_set}, Trajectory {traj} finished in {time.time() - start_t:.2f} sec')
 
     train_data = {'X_path_03': [], 'X_path_02': [], 'X_path_depth': [], 'X_path_imu': [], 'X_path_gps': [], 'Y': [], 'X_len': []}
     valid_data = {'X_path_03': [], 'X_path_02': [], 'X_path_depth': [], 'X_path_imu': [], 'X_path_gps': [], 'Y': [], 'X_len': []}
@@ -191,12 +183,12 @@ def get_data_info(climate_sets, seq_len, overlap, sample_times=1, pad_y=False, s
 
 def get_partition_data_info(partition, climate_sets, seq_len, overlap, sample_times=1, pad_y=False, shuffle=False, sort=True):
     return get_data_info(climate_sets, seq_len, overlap, sample_times, pad_y, shuffle, sort)
-
+    
 class SortedRandomBatchSampler(Sampler):
     def __init__(self, info_dataframe, batch_size, drop_last=False):
         self.df = info_dataframe
         self.batch_size = batch_size
-        self.drop_last = False
+        self.drop_last = drop_last
         self.unique_seq_lens = sorted(self.df.iloc[:].seq_len.unique(), reverse=True)
         self.len = 0
         for v in self.unique_seq_lens:
@@ -215,7 +207,7 @@ class SortedRandomBatchSampler(Sampler):
             if not self.drop_last and n_sample % self.batch_size != 0:
                 n_batch += 1
             rand_idxs = (start_idx + torch.randperm(n_sample)).tolist()
-            tmp = [rand_idxs[s * self.batch_size: s * self.batch_size + self.batch_size] for s in range(0, n_batch)]
+            tmp = [rand_idxs[s * self.batch_size: s * self.batch_size + self.batch_size] for s in range(n_batch)]
             list_batch_indexes += tmp
             start_idx += n_sample
         return iter(list_batch_indexes)
@@ -224,11 +216,10 @@ class SortedRandomBatchSampler(Sampler):
         return self.len
 
 class ImageSequenceDataset(Dataset):
-    def __init__(self, info_dataframe, resize_mode='crop', new_size=None, img_means_03=None, img_stds_03=(1, 1, 1), 
-                 img_means_02=None, img_stds_02=(1, 1, 1), minus_point_5=False, is_training=False):
+    def __init__(self, info_dataframe, resize_mode='crop', new_size=None, img_means_03=None, img_stds_03=(1,1,1), 
+                 img_means_02=None, img_stds_02=(1,1,1), minus_point_5=False, is_training=False):
         stats_pickle_path = "datainfo/dataset_stats.pickle"
-        self.depth_max = 100.0
-        
+        self.depth_max = par.depth_max
         if os.path.exists(stats_pickle_path):
             print(f"Loading dataset statistics from {stats_pickle_path}")
             with open(stats_pickle_path, 'rb') as f:
@@ -245,7 +236,7 @@ class ImageSequenceDataset(Dataset):
             self.gps_vel_std = stats['gps_vel_std']
             self.depth_max = stats['depth_max']
         else:
-            print("Computing dataset statistics...")
+            print("Computing dataset statistics on full dataset for stability...")
             transform_ops = []
             if resize_mode == 'crop':
                 transform_ops.append(transforms.CenterCrop((new_size[0], new_size[1])))
@@ -336,7 +327,7 @@ class ImageSequenceDataset(Dataset):
                 pickle.dump(stats, f)
             print(f"Saved dataset statistics to {stats_pickle_path}")
 
-        # Initialize transformations with augmentation for training
+        # Transformation pipeline (with optional augmentation)
         transform_ops = []
         if is_training:
             transform_ops.extend([
@@ -365,30 +356,27 @@ class ImageSequenceDataset(Dataset):
 
     def __getitem__(self, index):
         raw_groundtruth = self.groundtruth_arr[index]
-        groundtruth_sequence = torch.FloatTensor(raw_groundtruth)
-
+        # Compute relative poses using improved normalization
         relative_poses = []
-        for i in range(groundtruth_sequence.shape[0]):
+        for i in range(len(raw_groundtruth)):
             if i == 0:
                 relative_pose = torch.zeros(6, dtype=torch.float32)
             else:
-                delta_pose = groundtruth_sequence[i] - groundtruth_sequence[i-1]
-                roll_rel, pitch_rel, yaw_rel = delta_pose[:3]
+                delta_pose = torch.tensor(raw_groundtruth[i]) - torch.tensor(raw_groundtruth[i-1])
+                # Normalize angle differences
+                roll_rel = normalize_angle_delta(delta_pose[0])
+                pitch_rel = normalize_angle_delta(delta_pose[1])
+                yaw_rel = normalize_angle_delta(delta_pose[2])
                 t_rel = delta_pose[3:]
-
-                roll_rel = normalize_angle_delta(roll_rel)
-                pitch_rel = normalize_angle_delta(pitch_rel)
-                yaw_rel = normalize_angle_delta(yaw_rel)
-
-                roll_prev, pitch_prev, yaw_prev = groundtruth_sequence[i-1, :3]
-                R_prev = euler_to_rotation_matrix(roll_prev, pitch_prev, yaw_prev)
-                t_rel_transformed = torch.FloatTensor(R_prev.T @ t_rel.numpy())
-
-                relative_pose = torch.tensor([roll_rel, pitch_rel, yaw_rel, t_rel_transformed[0], t_rel_transformed[1], t_rel_transformed[2]], dtype=torch.float32)
+                # Transform translation using previous rotation matrix
+                roll_prev, pitch_prev, yaw_prev = raw_groundtruth[i-1][:3]
+                R_prev = torch.tensor(euler_to_rotation_matrix(roll_prev, pitch_prev, yaw_prev), dtype=torch.float32)
+                t_rel_transformed = torch.matmul(R_prev.T, t_rel.unsqueeze(-1)).squeeze(-1)
+                relative_pose = torch.tensor([roll_rel, pitch_rel, yaw_rel,
+                                              t_rel_transformed[0], t_rel_transformed[1], t_rel_transformed[2]], dtype=torch.float32)
             relative_poses.append(relative_pose)
-
         groundtruth_sequence = torch.stack(relative_poses)
-
+        
         image_path_sequence_03 = self.image_arr_03[index]
         image_path_sequence_02 = self.image_arr_02[index]
         depth_path_sequence = self.depth_arr[index]
@@ -397,11 +385,11 @@ class ImageSequenceDataset(Dataset):
         sequence_len = torch.tensor(self.seq_len_list[index])
         expected_len = len(image_path_sequence_03)
         
-        image_sequence_03 = [self.normalizer_03(self.transformer(Image.open(img_path)) - (0.5 if self.minus_point_5 else 0)).unsqueeze(0) 
+        image_sequence_03 = [self.normalizer_03(self.transformer(Image.open(img_path)) - (0.5 if self.minus_point_5 else 0)).unsqueeze(0)
                              for img_path in image_path_sequence_03]
         image_sequence_03 = torch.cat(image_sequence_03, 0)
         
-        image_sequence_02 = [self.normalizer_02(self.transformer(Image.open(img_path)) - (0.5 if self.minus_point_5 else 0)).unsqueeze(0) 
+        image_sequence_02 = [self.normalizer_02(self.transformer(Image.open(img_path)) - (0.5 if self.minus_point_5 else 0)).unsqueeze(0)
                              for img_path in image_path_sequence_02]
         image_sequence_02 = torch.cat(image_sequence_02, 0)
         
@@ -414,7 +402,6 @@ class ImageSequenceDataset(Dataset):
                     depth_path_sequence = depth_path_sequence[:expected_len]
                 else:
                     depth_path_sequence.extend([None] * (expected_len - len(depth_path_sequence)))
-            
             for depth_path in depth_path_sequence:
                 if depth_path is None or not os.path.exists(depth_path):
                     depth_as_tensor = torch.zeros((1, par.img_h, par.img_w))
@@ -439,21 +426,18 @@ class ImageSequenceDataset(Dataset):
             else:
                 imu_data = np.load(imu_path)[start_idx:end_idx]  # [ax, ay, az, wx, wy, wz]
                 imu_data = torch.tensor(imu_data, dtype=torch.float32)
-                # Convert IMU data to NED convention (assuming IMU data is in body frame)
-                # For simplicity, assume IMU axes need to be remapped similarly
+                # Convert IMU to NED convention: mapping axes explicitly
                 imu_data_ned = imu_data.clone()
-                imu_data_ned[:, 0] = imu_data[:, 2]  # az -> ax (North)
-                imu_data_ned[:, 1] = imu_data[:, 1]  # ay -> ay (East)
-                imu_data_ned[:, 2] = -imu_data[:, 0]  # -ax -> az (Down)
-                imu_data_ned[:, 3] = imu_data[:, 5]  # wz -> wx
-                imu_data_ned[:, 4] = imu_data[:, 4]  # wy -> wy
-                imu_data_ned[:, 5] = -imu_data[:, 3]  # -wx -> wz
+                imu_data_ned[:, 0] = imu_data[:, 2]
+                imu_data_ned[:, 1] = imu_data[:, 1]
+                imu_data_ned[:, 2] = -imu_data[:, 0]
+                imu_data_ned[:, 3] = imu_data[:, 5]
+                imu_data_ned[:, 4] = imu_data[:, 4]
+                imu_data_ned[:, 5] = -imu_data[:, 3]
                 imu_acc = imu_data_ned[:, :3]
                 imu_gyro = imu_data_ned[:, 3:]
-                imu_acc_tensor = torch.from_numpy(imu_acc).float()
-                imu_gyro_tensor = torch.from_numpy(imu_gyro).float()
-                imu_acc_tensor = (imu_acc_tensor - self.imu_acc_mean) / self.imu_acc_std
-                imu_gyro_tensor = (imu_gyro_tensor - self.imu_gyro_mean) / self.imu_gyro_std
+                imu_acc_tensor = (imu_acc - self.imu_acc_mean) / self.imu_acc_std
+                imu_gyro_tensor = (imu_gyro - self.imu_gyro_mean) / self.imu_gyro_std
                 imu_sequence = torch.cat((imu_acc_tensor, imu_gyro_tensor), dim=1)
             if imu_sequence.size(0) != expected_len:
                 print(f"Warning: IMU sequence length ({imu_sequence.size(0)}) does not match RGB ({expected_len}) at index {index}. Adjusting.")
@@ -472,14 +456,11 @@ class ImageSequenceDataset(Dataset):
             else:
                 gps_data = np.load(gps_path)[start_idx:end_idx]  # [x, y, z, vx, vy, vz]
                 gps_data = torch.tensor(gps_data, dtype=torch.float32)
-                # Convert GPS data to NED convention
                 gps_data_ned = to_ned_pose(gps_data, is_absolute=True)
                 gps_pos = gps_data_ned[:, :3]
                 gps_vel = gps_data_ned[:, 3:]
-                gps_pos_tensor = torch.from_numpy(gps_pos).float()
-                gps_vel_tensor = torch.from_numpy(gps_vel).float()
-                gps_pos_tensor = (gps_pos_tensor - self.gps_pos_mean) / self.gps_pos_std
-                gps_vel_tensor = (gps_vel_tensor - self.gps_vel_mean) / self.gps_vel_std
+                gps_pos_tensor = (gps_pos - self.gps_pos_mean) / self.gps_pos_std
+                gps_vel_tensor = (gps_vel - self.gps_vel_mean) / self.gps_vel_std
                 gps_sequence = torch.cat((gps_pos_tensor, gps_vel_tensor), dim=1)
             if gps_sequence.size(0) != expected_len:
                 print(f"Warning: GPS sequence length ({gps_sequence.size(0)}) does not match RGB ({expected_len}) at index {index}. Adjusting.")
@@ -496,32 +477,12 @@ class ImageSequenceDataset(Dataset):
 
     def __len__(self):
         return len(self.data_info.index)
-
+        
 if __name__ == '__main__':
     start_t = time.time()
     overlap = 1
     sample_times = 1
-    climate_sets = ['Kite_training/cloudy']
+    climate_sets = ['PLE_training/spring']
     seq_len = 5
     train_df, valid_df = get_data_info(climate_sets, seq_len, overlap, sample_times)
-    print(f'Elapsed Time (get_data_info): {time.time() - start_t} sec')
-    n_workers = 4
-    resize_mode = 'crop'
-    new_size = (150, 600)
-    img_means_03 = (-0.14968217427134656, -0.12941663107068363, -0.1320610301921484)
-    img_stds_03 = (1, 1, 1)
-    img_means_02 = (-0.14968217427134656, -0.12941663107068363, -0.1320610301921484)
-    img_stds_02 = (1, 1, 1)
-    train_dataset = ImageSequenceDataset(train_df, resize_mode, new_size, img_means_03, img_stds_03, img_means_02, img_stds_02, is_training=True)
-    valid_dataset = ImageSequenceDataset(valid_df, resize_mode, new_size, img_means_03, img_stds_03, img_means_02, img_stds_02, is_training=False)
-    train_sampler = SortedRandomBatchSampler(train_df, batch_size=4, drop_last=False)
-    valid_sampler = SortedRandomBatchSampler(valid_df, batch_size=4, drop_last=False)
-    train_dataloader = DataLoader(train_dataset, batch_sampler=train_sampler, num_workers=n_workers)
-    valid_dataloader = DataLoader(valid_dataset, batch_sampler=valid_sampler, num_workers=n_workers)
-    print(f'Elapsed Time (dataloader): {time.time() - start_t} sec')
-
-    for batch in train_dataloader:
-        s, (x_03, x_02, x_depth, x_imu, x_gps), y = batch
-    
-    print(f'Elapsed Time: {time.time() - start_t} sec')
-    print('Number of workers = ', n_workers)
+    print(f'Elapsed Time (get_data_info): {time.time() - start_t:.2f} sec')

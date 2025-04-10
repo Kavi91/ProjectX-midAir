@@ -16,65 +16,60 @@ def normalize_angle_delta(angle):
 
 def to_ned_pose(pose, is_absolute=True):
     """
-    Convert a pose to NED (North, East, Down) convention.
-    pose: Tensor of shape [..., 6] (roll, pitch, yaw, x, y, z)
-    is_absolute: If True, treat as absolute pose; if False, treat as relative pose.
-    Returns: Tensor in NED convention.
+    Convert a pose to the NED (North, East, Down) convention.
+    Input pose format: Tensor of shape [..., 6] (roll, pitch, yaw, x, y, z) in the internal
+    coordinate system (X: forward, Y: right, Z: up).
+    Conversion: X -> Z (North), Y -> Y (East), Z -> -X (Down)
     """
     pose_ned = pose.clone()
-    # NED: X (North), Y (East), Z (Down)
-    # Input: X (forward), Y (right), Z (up)
-    # Translation: X -> Z, Y -> Y, Z -> -X
-    pose_ned[..., 3] = pose[..., 5]  # Z -> X (North)
-    pose_ned[..., 4] = pose[..., 4]  # Y -> Y (East)
+    pose_ned[..., 3] = pose[..., 5]   # Z -> X (North)
+    pose_ned[..., 4] = pose[..., 4]   # Y -> Y (East)
     pose_ned[..., 5] = -pose[..., 3]  # -X -> Z (Down)
     return pose_ned
 
 def from_ned_pose(pose, is_absolute=True):
     """
-    Convert a pose from NED convention to the model's internal convention.
-    pose: Tensor of shape [..., 6] (roll, pitch, yaw, x, y, z) in NED
-    is_absolute: If True, treat as absolute pose; if False, treat as relative pose.
-    Returns: Tensor in internal convention.
+    Convert a pose from the NED coordinate system to the internal convention.
+    Conversion: X -> -Z, Y -> Y, Z -> X.
     """
     pose_internal = pose.clone()
-    # NED: X (North), Y (East), Z (Down)
-    # Internal: X (forward), Y (right), Z (up)
-    # Translation: X -> -Z, Y -> Y, Z -> X
     pose_internal[..., 3] = -pose[..., 5]  # -Z -> X
-    pose_internal[..., 4] = pose[..., 4]  # Y -> Y
-    pose_internal[..., 5] = pose[..., 3]  # X -> Z
+    pose_internal[..., 4] = pose[..., 4]     # Y -> Y
+    pose_internal[..., 5] = pose[..., 3]     # X -> Z
     return pose_internal
 
 def integrate_relative_poses(relative_poses):
     """
-    Integrate relative poses to absolute poses using SciPy for numerical stability.
-    relative_poses: Tensor of shape [batch_size, seq_len, 6] (roll, pitch, yaw, x, y, z)
-    Returns: Absolute poses in NED convention.
+    Integrate relative poses to compute absolute poses.
+    This version uses a loop over the time dimension and applies SciPy routines
+    for conversion; note that for long sequences numerical errors might accumulate.
+    For production, consider using a specialized robotics library.
+    
+    relative_poses: Tensor of shape [batch_size, seq_len, 6] containing
+    [roll, pitch, yaw, x, y, z] values.
+    Returns: Tensor of shape [batch_size, seq_len+1, 6] in NED convention.
     """
     batch_size, seq_len, _ = relative_poses.size()
     absolute_poses = torch.zeros(batch_size, seq_len + 1, 6, device=relative_poses.device)
     
     for t in range(seq_len):
-        rel_pose = relative_poses[:, t, :]  # [batch_size, 6]
-        rel_angles = rel_pose[:, :3]  # [roll, pitch, yaw]
-        rel_trans = rel_pose[:, 3:]  # [x, y, z]
-        
-        prev_pose = absolute_poses[:, t, :]  # [batch_size, 6]
+        rel_pose = relative_poses[:, t, :]  # [B, 6]
+        rel_angles = rel_pose[:, :3]         # relative Euler angles
+        rel_trans = rel_pose[:, 3:]          # relative translation
+
+        prev_pose = absolute_poses[:, t, :]  # previous absolute pose
         prev_angles = prev_pose[:, :3]
         prev_trans = prev_pose[:, 3:]
         
-        # Convert previous angles to rotation matrix using SciPy
+        # Compute rotation matrices for each batch element using SciPy
         R = torch.zeros(batch_size, 3, 3, device=relative_poses.device)
         for b in range(batch_size):
             R_np = Rotation.from_euler('xyz', prev_angles[b].cpu().numpy(), degrees=False).as_matrix()
             R[b] = torch.tensor(R_np, device=relative_poses.device, dtype=torch.float32)
         
-        # Transform relative translation to world frame
+        # Transform relative translation into the world frame and accumulate
         abs_trans = prev_trans + torch.matmul(R, rel_trans.unsqueeze(-1)).squeeze(-1)
-        
-        # Update angles
-        abs_angles = prev_angles + rel_angles
+        abs_angles = prev_angles + rel_angles  # Simple additive update
         
         absolute_poses[:, t + 1, :3] = abs_angles
         absolute_poses[:, t + 1, 3:] = abs_trans
