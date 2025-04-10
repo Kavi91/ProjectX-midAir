@@ -1,4 +1,0 @@
-plan :
-
-1. test with depth corrected  - done 
-2. increase droouts to minimize the overfitting
