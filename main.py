@@ -10,7 +10,7 @@ from model_2 import StereoAdaptiveVO
 from data_helper import get_data_info, SortedRandomBatchSampler, ImageSequenceDataset, get_partition_data_info
 import wandb
 from tqdm import tqdm
-from torch.cuda.amp import GradScaler, autocast  # Import AMP modules
+from torch.amp import GradScaler, autocast  # Updated import for AMP modules
 
 # Initialize WandB
 wandb.init(project="deepvo_training_midair", config=vars(par))
@@ -112,7 +112,14 @@ print('Number of training batches: ', num_train_batches)
 print('Number of validation batches: ', num_valid_batches)
 
 # Model
-M_deepvo = StereoAdaptiveVO(par.img_h, par.img_w, par.batch_norm)
+M_deepvo = StereoAdaptiveVO(
+    img_h=par.img_h,
+    img_w=par.img_w,
+    batch_norm=par.batch_norm,
+    input_channels=3,
+    hidden_size=512,
+    num_layers=2
+)
 use_cuda = torch.cuda.is_available()
 if use_cuda:
     print('CUDA used.')
@@ -157,13 +164,18 @@ if par.resume:
     print('Load optimizer from: ', par.load_optimizer_path)
 
 # Initialize GradScaler for mixed precision training
-scaler = GradScaler()
+scaler = GradScaler('cuda')  # Updated syntax for GradScaler
 
 # Train
 print('Record loss in: ', par.record_path)
 min_loss_t = 1e10
 min_loss_v = 1e10
 M_deepvo.train()
+
+# Use all climate sets from params.py (no curriculum learning)
+climate_sets = par.climate_sets
+print(f"Training with climate sets: {climate_sets}")
+print(f"Total epochs: {par.epochs}")
 
 total_start_time = time.time()
 epoch_times = []
@@ -188,26 +200,10 @@ for ep in range(par.epochs):
             if ep == 0 and batch_idx == 0:
                 print(f"Input shapes - t_x_03: {t_x_03.shape}, t_x_02: {t_x_02.shape}, ...")
             
-            # Clear gradients before each step
-            optimizer.zero_grad()
+            # Perform training step with mixed precision
+            ls = M_deepvo.step((t_x_03, t_x_02, t_x_depth, t_x_imu, t_x_gps), t_y, optimizer, scaler)
             
-            # Use autocast to enable mixed precision for the forward pass
-            with autocast():
-                ls = M_deepvo.step((t_x_03, t_x_02, t_x_depth, t_x_imu, t_x_gps), t_y, optimizer)
-            
-            # Scale the loss and perform backpropagation with GradScaler
-            scaler.scale(ls).backward()
-            
-            # Apply gradient clipping if specified
-            if M_deepvo.clip is not None:
-                scaler.unscale_(optimizer)  # Unscale gradients before clipping
-                torch.nn.utils.clip_grad_norm_(M_deepvo.rnn.parameters(), M_deepvo.clip)
-            
-            # Update optimizer and scaler
-            scaler.step(optimizer)
-            scaler.update()
-            
-            ls = ls.data.cpu().numpy()
+            ls = ls  # Loss is already a float from step()
             t_loss_list.append(float(ls))
             loss_mean += float(ls)
             tbar.set_postfix({'loss': f"{float(ls):.4f}"})
@@ -230,7 +226,7 @@ for ep in range(par.epochs):
                 v_x_gps = v_x_gps.cuda(non_blocking=par.pin_mem)
                 v_y = v_y.cuda(non_blocking=par.pin_mem)
             # Use autocast for validation as well
-            with autocast():
+            with autocast(device_type='cuda', enabled=True):  # Updated syntax for autocast
                 v_ls = M_deepvo.get_loss((v_x_03, v_x_02, v_x_depth, v_x_imu, v_x_gps), v_y)
             v_ls = v_ls.data.cpu().numpy()
             v_loss_list.append(float(v_ls))
@@ -284,7 +280,7 @@ for ep in range(par.epochs):
         lr_scheduler_warmup.step()
         print(f"Warmup Epoch {ep+1}: Learning rate adjusted to {current_lr}")
     else:
-        lr_scheduler.step(loss_mean_valid)
-        print(f"Epoch {ep+1}: Learning rate adjusted to {current_lr} based on validation loss")
+        lr_scheduler.step()  # StepLR does not take a loss argument, only epoch
+        print(f"Epoch {ep+1}: Learning rate adjusted to {current_lr}")
 
 wandb.finish()
