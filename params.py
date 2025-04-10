@@ -13,33 +13,35 @@ class Parameters():
         
         # Mid-Air climate sets
         self.climate_sets = [
-            'Kite_training/cloudy', 'Kite_training/foggy', 'Kite_training/sunny', 'Kite_training/sunset',
+            #'Kite_training/cloudy', 'Kite_training/foggy', 'Kite_training/sunny', 'Kite_training/sunset',
             'PLE_training/fall', 'PLE_training/spring', 'PLE_training/winter',
-            'VO_test/foggy', 'VO_test/sunny', 'VO_test/sunset' 
+            #'VO_test/foggy', 'VO_test/sunny', 'VO_test/sunset' 
         ]
         
         self.train_traj_ids = {
-            'Kite_training/cloudy': ['trajectory_3000', 'trajectory_3001', 'trajectory_3002'],
-            'Kite_training/foggy':  ['trajectory_2000'],# 'trajectory_2001', 'trajectory_2002'],
-            'Kite_training/sunny':  ['trajectory_0000', 'trajectory_0001', 'trajectory_0002'],
-            'Kite_training/sunset': ['trajectory_1000', 'trajectory_1001', 'trajectory_1002'],
+            #'Kite_training/cloudy': ['trajectory_3000', 'trajectory_3001', 'trajectory_3002'],
+            #'Kite_training/foggy':  ['trajectory_2000'],# 'trajectory_2001', 'trajectory_2002'],
+            #'Kite_training/sunny':  ['trajectory_0000', 'trajectory_0001', 'trajectory_0002'],
+            #'Kite_training/sunset': ['trajectory_1000', 'trajectory_1001', 'trajectory_1002'],
             'PLE_training/spring':  ['trajectory_5000', 'trajectory_5001', 'trajectory_5002'],
             'PLE_training/fall':    ['trajectory_4000', 'trajectory_4001', 'trajectory_4002'],
             'PLE_training/winter':  ['trajectory_6000', 'trajectory_6001', 'trajectory_6002'],
         }
 
         self.valid_traj_ids = {
-            'Kite_training/cloudy': ['trajectory_3004', 'trajectory_3005'],
-            'Kite_training/foggy':  ['trajectory_2004'],# 'trajectory_2005'],
-            'Kite_training/sunny':  ['trajectory_0004', 'trajectory_0005'],
-            'Kite_training/sunset': ['trajectory_1004', 'trajectory_1005'],
+            #'Kite_training/cloudy': ['trajectory_3004', 'trajectory_3005'],
+            #'Kite_training/foggy':  ['trajectory_2004'],# 'trajectory_2005'],
+            #'Kite_training/sunny':  ['trajectory_0004', 'trajectory_0005'],
+            #'Kite_training/sunset': ['trajectory_1004', 'trajectory_1005'],
+            'PLE_training/spring':  ['trajectory_5003', 'trajectory_5004'],
         }
 
         self.test_traj_ids = {
-            'Kite_training/foggy':  ['trajectory_2000', 'trajectory_2002'],
-            'Kite_training/cloudy': ['trajectory_3000', 'trajectory_3002'],
-            'Kite_training/sunny':  ['trajectory_0000', 'trajectory_0002'],
-            'Kite_training/sunset': ['trajectory_1000', 'trajectory_1002'],
+            #'Kite_training/foggy':  ['trajectory_2000', 'trajectory_2002'],
+            #'Kite_training/cloudy': ['trajectory_3000', 'trajectory_3002'],
+            #'Kite_training/sunny':  ['trajectory_0000', 'trajectory_0002'],
+            #'Kite_training/sunset': ['trajectory_1000', 'trajectory_1002'],
+            'PLE_training/spring':  ['trajectory_5005', 'trajectory_5006'],
         }
         
         self.partition = None

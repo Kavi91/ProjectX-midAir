@@ -149,19 +149,7 @@ elif par.optim['opt'] == 'Adagrad':
 elif par.optim['opt'] == 'Cosine':
     optimizer = torch.optim.SGD(M_deepvo.parameters(), lr=par.optim['lr'], weight_decay=par.optim.get('weight_decay', 0))
     T_iter = par.optim['T'] * len(train_dl)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_iter, eta_min=0, last_epoch=-1)
-
-# Learning rate schedulers
-warmup_epochs = 5
-lr_scheduler_warmup = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: min(1.0, (epoch + 1) / warmup_epochs))
-lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
-
-# Load trained model and optimizer
-if par.resume:
-    M_deepvo.load_state_dict(torch.load(par.load_model_path, weights_only=True))
-    optimizer.load_state_dict(torch.load(par.load_optimizer_path, weights_only=True))
-    print('Load model from: ', par.load_model_path)
-    print('Load optimizer from: ', par.load_optimizer_path)
+    # No scheduler needed, so we remove this part
 
 # Initialize GradScaler for mixed precision training
 scaler = GradScaler('cuda')  # Updated syntax for GradScaler
@@ -170,9 +158,11 @@ scaler = GradScaler('cuda')  # Updated syntax for GradScaler
 print('Record loss in: ', par.record_path)
 min_loss_t = 1e10
 min_loss_v = 1e10
+patience = 20
+best_val_loss = min_loss_v
+epochs_no_improve = 0
 M_deepvo.train()
 
-# Use all climate sets from params.py (no curriculum learning)
 climate_sets = par.climate_sets
 print(f"Training with climate sets: {climate_sets}")
 print(f"Total epochs: {par.epochs}")
@@ -246,6 +236,7 @@ for ep in range(par.epochs):
 
     # Get current learning rate
     current_lr = optimizer.param_groups[0]['lr']
+    print(f"Learning rate: {current_lr}")  # Log the learning rate (now constant)
 
     # Log to WandB
     wandb.log({
@@ -275,12 +266,14 @@ for ep in range(par.epochs):
         torch.save(M_deepvo.state_dict(), par.save_model_path + '.train')
         torch.save(optimizer.state_dict(), par.save_optimzer_path + '.train')
 
-    # Apply schedulers
-    if ep < warmup_epochs:
-        lr_scheduler_warmup.step()
-        print(f"Warmup Epoch {ep+1}: Learning rate adjusted to {current_lr}")
+    # Early stopping check
+    if loss_mean_valid < best_val_loss:
+        best_val_loss = loss_mean_valid
+        epochs_no_improve = 0
     else:
-        lr_scheduler.step()  # StepLR does not take a loss argument, only epoch
-        print(f"Epoch {ep+1}: Learning rate adjusted to {current_lr}")
+        epochs_no_improve += 1
+        if epochs_no_improve >= patience:
+            print(f"Early stopping at epoch {ep+1}: Validation loss did not improve for {patience} epochs.")
+            break
 
 wandb.finish()
