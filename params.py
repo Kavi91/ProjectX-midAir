@@ -40,10 +40,11 @@ class Parameters():
         }
 
         self.test_traj_ids = {
-            'Kite_training/cloudy': ['trajectory_3006'],
-            'Kite_training/foggy':  ['trajectory_2006'],
-            'Kite_training/sunny':  ['trajectory_0006'],
-            'Kite_training/sunset': ['trajectory_1006'],
+            
+            'Kite_training/foggy':  ['trajectory_2002'],
+            'Kite_training/cloudy': ['trajectory_3002'],
+            'Kite_training/sunny':  ['trajectory_0002'],
+            'Kite_training/sunset': ['trajectory_1002'],
             'PLE_training/spring':  ['trajectory_5006'],
         }
 
@@ -67,7 +68,7 @@ class Parameters():
         #self.depth_mean = 24.101730346679688
         #self.depth_std = 5.1569013595581055
         self.depth_max = 100.0
-        self.minus_point_5 = True
+        self.minus_point_5 = True #flownet requires this
 
         self.seq_len = (5, 7)
         self.sample_times = 3
@@ -87,7 +88,7 @@ class Parameters():
         # Model
         self.rnn_hidden_size = 1000
         self.conv_dropout = (0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.5)
-        self.rnn_dropout_out = 0.7
+        self.rnn_dropout_out = 0.5
         self.rnn_dropout_between = 0
         self.clip = None
         self.batch_norm = True
@@ -95,7 +96,7 @@ class Parameters():
         # Training
         self.epochs = 100
         self.pin_mem = True
-        self.optim = {'opt': 'Adam', 'lr': 1e-4, 'weight_decay': 1e-4}
+        self.optim = {'opt': 'Adam', 'lr': 1e-4, 'weight_decay': 1e-3}
         
         # Pretrain, Resume training
         self.pretrained_flownet = '/home/krkavinda/DeepVO-pytorch/FlowNet_models/pytorch/flownets_bn_EPE2.459.pth'
@@ -111,7 +112,7 @@ class Parameters():
         self.enable_gps = False
 
         self.gps_loss_weight = 0.5
-        self.l2_lambda = 0.0001
+        self.l2_lambda = 0
         self.k_factor = 100
 
         # Paths
