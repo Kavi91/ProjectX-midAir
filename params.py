@@ -86,11 +86,6 @@ class Parameters():
         self.pin_mem = True
         self.optim = {'opt': 'Adam', 'lr': 1e-4, 'weight_decay': 1e-4}
         
-        # Pretrain, Resume training
-        self.pretrained_flownet = '/home/krkavinda/DeepVO-pytorch/FlowNet_models/pytorch/flownets_bn_EPE2.459.pth'
-        self.resume = False
-        self.resume_t_or_v = '.train'
-
         # Modality flags
         self.enable_rgb = True
         self.enable_depth = False
@@ -99,8 +94,18 @@ class Parameters():
         self.enable_gps = False
 
         self.gps_loss_weight = 0.5
-        self.l2_lambda = 0.00001
+        self.l2_lambda = 0
         self.k_factor = 100
+        self.depth_gate_scaling=20.0  # Increased to prioritize depth features
+        self.imu_gate_scaling=15.0 # Increased to prioritize IMU features'
+        self.translation_loss_weight = 0
+        self.depth_consistency_loss_weight = 10.0 
+
+
+        # Pretrain, Resume training
+        self.pretrained_flownet = '/home/krkavinda/DeepVO-pytorch/FlowNet_models/pytorch/flownets_bn_EPE2.459.pth'
+        self.resume = False
+        self.resume_t_or_v = '.train'
 
         # Paths
         self.load_model_path = 'models/midair_im{}x{}_s{}x{}_b{}_rnn{}_{}.model{}'.format(

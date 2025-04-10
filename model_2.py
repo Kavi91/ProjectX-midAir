@@ -5,7 +5,7 @@ from params import par
 
 # Define the Adaptive Gated Attention Fusion Module
 class AdaptiveGatedAttentionFusion(nn.Module):
-    def __init__(self, rgb_channels, depth_channels, lidar_channels, depth_gate_scaling=20.0, imu_gate_scaling=15.0):
+    def __init__(self, rgb_channels, depth_channels, lidar_channels, depth_gate_scaling=par.depth_gate_scaling, imu_gate_scaling= par.imu_gate_scaling):
         super(AdaptiveGatedAttentionFusion, self).__init__()
         self.rgb_channels = rgb_channels
         self.depth_channels = depth_channels
@@ -128,10 +128,10 @@ class StereoAdaptiveVO(nn.Module):
         self.linear = nn.Linear(hidden_size, 6)
 
         # Loss weights
-        self.k_factor = 0.5  # Reduced to balance angle and translation loss
-        self.translation_loss_weight = 2.0  # Increased to prioritize translation
-        self.depth_consistency_loss_weight = 10.0  # Increased to prioritize depth consistency
-        self.gps_loss_weight = 5.0  # Increased to prioritize GPS data
+        self.k_factor = par.k_factor  # Reduced to balance angle and translation loss
+        self.translation_loss_weight = par.translation_loss_weight  # Increased to prioritize translation
+        self.depth_consistency_loss_weight = par.depth_consistency_loss_weight  # Increased to prioritize depth consistency
+        self.gps_loss_weight = par.gps_loss_weight # Increased to prioritize GPS data
 
     def forward(self, x):
         x_03, x_02, x_depth, x_imu, x_gps = x
@@ -252,6 +252,7 @@ class StereoAdaptiveVO(nn.Module):
         translation_loss = torch.nn.functional.mse_loss(predicted[:, :, 3:], y[:, :, 3:])
         l2_lambda = par.l2_lambda
         l2_loss = l2_lambda * sum(torch.norm(param) for param in self.parameters() if param.requires_grad)
+        
         base_loss = self.k_factor * angle_loss + self.translation_loss_weight * translation_loss + l2_loss
 
         # Placeholder for GPS loss (assuming it's computed elsewhere)
