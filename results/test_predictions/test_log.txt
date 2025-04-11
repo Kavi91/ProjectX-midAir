@@ -1,0 +1,161 @@
+==================================================
+Testing on trajectories: [('Kite_training/sunny', 'trajectory_0008'), ('Kite_training/cloudy', 'trajectory_3004'), ('Kite_training/foggy', 'trajectory_2006'), ('Kite_training/sunset', 'trajectory_1008')]
+
+Testing on Kite_training/sunny/trajectory_0008
+Ground truth trajectory range (NED):
+North: -792.800 to 792.439
+East: -366.633 to 3304.201
+Down: -3898.535 to 965.204
+Prediction took 6.71 seconds
+Number of continuous relative poses: 2205
+Number of absolute predicted poses (before alignment): 2206
+Predicted 2205 poses, Ground truth has 2205 poses
+First 5 ground-truth poses (NED):
+[[-1.01351971e-02 -7.68439695e-02 -2.03093776e-04  0.00000000e+00
+   0.00000000e+00 -0.00000000e+00]
+ [-9.03993007e-03 -7.72063285e-02 -9.19901824e-04 -1.19920158e+00
+   2.14286613e+00 -4.21659851e+00]
+ [-7.97438156e-03 -7.76346773e-02 -1.49612315e-03 -2.39594555e+00
+   4.28150988e+00 -8.43327141e+00]
+ [-6.94520585e-03 -7.81355500e-02 -1.94818468e-03 -3.59027886e+00
+   6.41600418e+00 -1.26501255e+01]
+ [-5.95905958e-03 -7.87155032e-02 -2.29251385e-03 -4.78224802e+00
+   8.54642487e+00 -1.68672657e+01]]
+First 5 predicted absolute poses (NED):
+[[-1.0135197e-02 -7.6843970e-02 -2.0309378e-04  0.0000000e+00
+   0.0000000e+00  0.0000000e+00]
+ [-7.7393595e-03 -7.7145055e-02  7.7885655e-03  8.9496568e-02
+   2.3599675e-02 -3.0777484e-01]
+ [-5.3421501e-03 -7.7729471e-02  1.3770417e-02  1.7274150e-01
+   5.0424367e-02 -5.9074819e-01]
+ [-2.9736161e-03 -7.8230821e-02  1.9359400e-02  2.5444219e-01
+   7.8613684e-02 -8.6755705e-01]
+ [-5.7260972e-04 -7.8633368e-02  2.4837716e-02  3.3579770e-01
+   1.0790829e-01 -1.1430111e+00]]
+Predicted trajectory range (NED):
+North: -68.344 to 24.560
+East: -48.970 to 38.725
+Down: -98.565 to 159.406
+Saved predictions to results/test_predictions/pred_trajectory_0008.txt
+Angle Loss (MSE): 15.903564
+Translation Loss (MSE): 2867268.500000
+Total Loss: 2868858.750000
+==================================================
+
+Testing on Kite_training/cloudy/trajectory_3004
+Ground truth trajectory range (NED):
+North: 0.000 to 2421.266
+East: -4405.168 to 587.558
+Down: -8373.150 to -0.000
+Prediction took 7.47 seconds
+Number of continuous relative poses: 2229
+Number of absolute predicted poses (before alignment): 2230
+Predicted 2230 poses, Ground truth has 2230 poses
+First 5 ground-truth poses (NED):
+[[-1.19770013e-01 -2.00044200e-01  1.01932656e-05  0.00000000e+00
+   0.00000000e+00 -0.00000000e+00]
+ [-1.20702416e-01 -2.00366795e-01  4.58319628e-05  1.38296437e+00
+   1.98312879e+00 -4.17849588e+00]
+ [-1.21554010e-01 -2.00622454e-01  7.31214968e-05  2.77981758e+00
+   3.94640160e+00 -8.37166214e+00]
+ [-1.22312717e-01 -2.00807214e-01  9.18829537e-05  4.18940926e+00
+   5.88967562e+00 -1.25795822e+01]
+ [-1.22966483e-01 -2.00917110e-01  1.01937418e-04  5.61058998e+00
+   7.81280994e+00 -1.68023319e+01]]
+First 5 predicted absolute poses (NED):
+[[-1.1977001e-01 -2.0004420e-01  1.0193266e-05  0.0000000e+00
+   0.0000000e+00  0.0000000e+00]
+ [-1.1719289e-01 -2.0010820e-01  7.8916997e-03  8.9535050e-02
+   2.3519071e-02 -3.0768943e-01]
+ [-1.1468057e-01 -2.0053463e-01  1.3792629e-02  1.7271875e-01
+   5.0320268e-02 -5.9053183e-01]
+ [-1.1227116e-01 -2.0098986e-01  1.9360535e-02  2.5431791e-01
+   7.8546114e-02 -8.6731923e-01]
+ [-1.0988307e-01 -2.0143168e-01  2.4866248e-02  3.3556443e-01
+   1.0791732e-01 -1.1428471e+00]]
+Predicted trajectory range (NED):
+North: -67.078 to 20.503
+East: -46.191 to 39.223
+Down: -99.218 to 154.252
+Saved predictions to results/test_predictions/pred_trajectory_3004.txt
+Angle Loss (MSE): 23.879248
+Translation Loss (MSE): 10173750.000000
+Total Loss: 10176138.000000
+==================================================
+
+Testing on Kite_training/foggy/trajectory_2006
+Ground truth trajectory range (NED):
+North: -644.203 to 3.223
+East: -701.216 to 1254.276
+Down: -3131.995 to -0.000
+Prediction took 6.37 seconds
+Number of continuous relative poses: 2205
+Number of absolute predicted poses (before alignment): 2206
+Predicted 2206 poses, Ground truth has 2206 poses
+First 5 ground-truth poses (NED):
+[[-1.5986989e-01 -5.2897218e-03 -1.5972630e-03  0.0000000e+00
+   0.0000000e+00 -0.0000000e+00]
+ [-1.5898320e-01 -7.1414672e-03 -7.7023534e-03 -8.1860149e-01
+   1.4495759e+00 -2.0580363e+00]
+ [-1.5795848e-01 -9.1257598e-03 -1.3361511e-02 -1.6569200e+00
+   2.8714001e+00 -4.1145973e+00]
+ [-1.5679879e-01 -1.1215857e-02 -1.8585943e-02 -2.5131867e+00
+   4.2659183e+00 -6.1698556e+00]
+ [-1.5550725e-01 -1.3385020e-02 -2.3386855e-02 -3.3856320e+00
+   5.6335754e+00 -8.2239828e+00]]
+First 5 predicted absolute poses (NED):
+[[-0.1598699  -0.00528972 -0.00159726  0.          0.          0.        ]
+ [-0.15766521 -0.00588116  0.00654286  0.0895029   0.02371586 -0.3079977 ]
+ [-0.15528476 -0.00648551  0.01253207  0.1728239   0.05050841 -0.59096533]
+ [-0.15289158 -0.00694528  0.01809531  0.25460213  0.07863883 -0.86770546]
+ [-0.15056218 -0.00746373  0.02364164  0.33603817  0.10793756 -1.1432674 ]]
+Predicted trajectory range (NED):
+North: -69.108 to 26.238
+East: -50.688 to 38.424
+Down: -98.119 to 159.766
+Saved predictions to results/test_predictions/pred_trajectory_2006.txt
+Angle Loss (MSE): 18.757164
+Translation Loss (MSE): 1438410.750000
+Total Loss: 1440286.500000
+==================================================
+
+Testing on Kite_training/sunset/trajectory_1008
+Ground truth trajectory range (NED):
+North: -792.800 to 792.439
+East: -366.633 to 3304.201
+Down: -3898.535 to 965.204
+Prediction took 7.03 seconds
+Number of continuous relative poses: 2205
+Number of absolute predicted poses (before alignment): 2206
+Predicted 2205 poses, Ground truth has 2205 poses
+First 5 ground-truth poses (NED):
+[[-1.01351971e-02 -7.68439695e-02 -2.03093776e-04  0.00000000e+00
+   0.00000000e+00 -0.00000000e+00]
+ [-9.03993007e-03 -7.72063285e-02 -9.19901824e-04 -1.19920158e+00
+   2.14286613e+00 -4.21659851e+00]
+ [-7.97438156e-03 -7.76346773e-02 -1.49612315e-03 -2.39594555e+00
+   4.28150988e+00 -8.43327141e+00]
+ [-6.94520585e-03 -7.81355500e-02 -1.94818468e-03 -3.59027886e+00
+   6.41600418e+00 -1.26501255e+01]
+ [-5.95905958e-03 -7.87155032e-02 -2.29251385e-03 -4.78224802e+00
+   8.54642487e+00 -1.68672657e+01]]
+First 5 predicted absolute poses (NED):
+[[-1.0135197e-02 -7.6843970e-02 -2.0309378e-04  0.0000000e+00
+   0.0000000e+00  0.0000000e+00]
+ [-7.3707979e-03 -7.6581135e-02  7.4897748e-03  8.9476891e-02
+   2.3367142e-02 -3.0731490e-01]
+ [-4.7446471e-03 -7.6808073e-02  1.3267743e-02  1.7254323e-01
+   5.0127950e-02 -5.8993804e-01]
+ [-2.2221608e-03 -7.7069238e-02  1.8717434e-02  2.5398004e-01
+   7.8341693e-02 -8.6652565e-01]
+ [ 2.6992057e-04 -7.7329256e-02  2.4112733e-02  3.3501709e-01
+   1.0772619e-01 -1.1418784e+00]]
+Predicted trajectory range (NED):
+North: -70.642 to 31.236
+East: -53.132 to 38.041
+Down: -97.572 to 155.686
+Saved predictions to results/test_predictions/pred_trajectory_1008.txt
+Angle Loss (MSE): 15.657587
+Translation Loss (MSE): 2877911.000000
+Total Loss: 2879476.750000
+==================================================
