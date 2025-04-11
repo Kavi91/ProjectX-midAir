@@ -236,7 +236,7 @@ class ImageSequenceDataset(Dataset):
             self.gps_vel_std = stats['gps_vel_std']
             self.depth_max = stats['depth_max']
         else:
-            print("Computing dataset statistics on full dataset for stability...")
+            print("Computing dataset statistics on first 100 sequences for stability...")
             transform_ops = []
             if resize_mode == 'crop':
                 transform_ops.append(transforms.CenterCrop((new_size[0], new_size[1])))
@@ -248,9 +248,12 @@ class ImageSequenceDataset(Dataset):
             self.normalizer_03 = transforms.Normalize(mean=img_means_03, std=img_stds_03)
             self.normalizer_02 = transforms.Normalize(mean=img_means_02, std=img_stds_02)
             
+            # Limit to first 100 sequences
+            limited_df = info_dataframe.iloc[:100]
+            
             if par.enable_depth:
                 depth_values = []
-                for index, depth_path_seq in enumerate(info_dataframe.depth_path):
+                for index, depth_path_seq in enumerate(limited_df.depth_path):
                     for depth_path in depth_path_seq:
                         if os.path.exists(depth_path):
                             depth_img = Image.open(depth_path)
@@ -273,7 +276,7 @@ class ImageSequenceDataset(Dataset):
             if par.enable_imu:
                 imu_values_acc = []
                 imu_values_gyro = []
-                for imu_path_info in info_dataframe.imu_path:
+                for imu_path_info in limited_df.imu_path:
                     imu_path, start_idx, end_idx = imu_path_info
                     if imu_path and os.path.exists(imu_path):
                         imu_data = np.load(imu_path)[start_idx:end_idx]
@@ -293,7 +296,7 @@ class ImageSequenceDataset(Dataset):
             if par.enable_gps:
                 gps_values_pos = []
                 gps_values_vel = []
-                for gps_path_info in info_dataframe.gps_path:
+                for gps_path_info in limited_df.gps_path:
                     gps_path, start_idx, end_idx = gps_path_info
                     if gps_path and os.path.exists(gps_path):
                         gps_data = np.load(gps_path)[start_idx:end_idx]
@@ -353,6 +356,8 @@ class ImageSequenceDataset(Dataset):
         self.imu_arr = np.asarray(self.data_info.imu_path)
         self.gps_arr = np.asarray(self.data_info.gps_path)
         self.groundtruth_arr = np.asarray(self.data_info.pose)
+
+    # Rest of the class (__getitem__, __len__) remains unchanged
 
     def __getitem__(self, index):
         raw_groundtruth = self.groundtruth_arr[index]

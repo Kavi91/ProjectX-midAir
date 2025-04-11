@@ -78,17 +78,17 @@ class Parameters():
         
         # Modality flags – ensure these are used consistently across the code.
         self.enable_rgb = True
-        self.enable_depth = False
+        self.enable_depth = True
         self.enable_lidar = False
-        self.enable_imu = False
-        self.enable_gps = False
+        self.enable_imu = True
+        self.enable_gps = True
 
         self.gps_loss_weight = 0.5
         self.l2_lambda = 0
         self.k_factor = 100
         self.depth_gate_scaling = 20.0
         self.imu_gate_scaling = 15.0
-        self.translation_loss_weight = 0
+        self.translation_loss_weight = 1
         self.depth_consistency_loss_weight = 10.0
 
         # Pretrain and resume settings
