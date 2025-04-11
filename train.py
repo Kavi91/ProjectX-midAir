@@ -5,29 +5,36 @@ import os
 import time
 import pandas as pd
 import pickle
+import torch.nn.functional as F
 from params import par
-from model_2 import StereoAdaptiveVO
+from model import StereoAdaptiveVO
 from data_helper import get_data_info, SortedRandomBatchSampler, ImageSequenceDataset
 import wandb
 from tqdm import tqdm
 from torch.amp import GradScaler, autocast
+import argparse
+from params import Parameters
 
-# Initialize WandB for experiment tracking.
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description='Train StereoAdaptiveVO model')
+parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
+args = parser.parse_args()
+
+# Initialize Parameters with the specified batch size
+par = Parameters(batch_size=args.batch_size)
+
+# Initialize WandB
 wandb.init(project="deepvo_training_midair", config=vars(par))
 wandb.config.update({"start_time": time.time()})
 
-# Write all hyperparameters and settings to record_path.
+# Record hyperparameters
 mode = 'a' if par.resume else 'w'
 with open(par.record_path, mode) as f:
     f.write('\n' + '=' * 50 + '\n')
     f.write('\n'.join(f"{k}: {v}" for k, v in vars(par).items()))
     f.write('\n' + '=' * 50 + '\n')
 
-# Memory advisory.
-if par.batch_size > 16:
-    print(f"Warning: Batch size {par.batch_size} may lead to high memory usage. Consider adjusting batch size, number of workers, or using AMP.")
-
-# Prepare Data: load precomputed data info if available, otherwise create new.
+# Data preparation
 if os.path.isfile(par.train_data_info_path) and os.path.isfile(par.valid_data_info_path):
     print('Loading data info from:', par.train_data_info_path)
     train_df = pd.read_pickle(par.train_data_info_path)
@@ -46,22 +53,22 @@ else:
     train_df.to_pickle(par.train_data_info_path)
     valid_df.to_pickle(par.valid_data_info_path)
 
-# Create data samplers and DataLoaders.
+# Samplers and DataLoaders
 train_sampler = SortedRandomBatchSampler(train_df, par.batch_size, drop_last=True)
 train_dataset = ImageSequenceDataset(
     train_df, par.resize_mode, (par.img_h, par.img_w), par.img_means_03, par.img_stds_03,
     par.img_means_02, par.img_stds_02, par.minus_point_5, is_training=True
 )
-train_dl = DataLoader(train_dataset, batch_sampler=train_sampler, num_workers=par.n_processors, pin_memory=par.pin_mem)
+train_dl = DataLoader(train_dataset, batch_sampler=train_sampler, num_workers=par.num_workers, pin_memory=par.pin_mem)
 
 valid_sampler = SortedRandomBatchSampler(valid_df, par.batch_size, drop_last=True)
 valid_dataset = ImageSequenceDataset(
     valid_df, par.resize_mode, (par.img_h, par.img_w), par.img_means_03, par.img_stds_03,
     par.img_means_02, par.img_stds_02, par.minus_point_5, is_training=False
 )
-valid_dl = DataLoader(valid_dataset, batch_sampler=valid_sampler, num_workers=par.n_processors, pin_memory=par.pin_mem)
+valid_dl = DataLoader(valid_dataset, batch_sampler=valid_sampler, num_workers=par.num_workers, pin_memory=par.pin_mem)
 
-# Load or compute dataset sizes.
+# Load or compute dataset sizes
 stats_pickle_path = "datainfo/dataset_stats.pickle"
 if os.path.exists(stats_pickle_path):
     print(f"Loading dataset sizes from {stats_pickle_path}")
@@ -105,8 +112,9 @@ print('Training samples:', num_train_samples)
 print('Validation samples:', num_valid_samples)
 print('Training batches:', num_train_batches)
 print('Validation batches:', num_valid_batches)
+print(f"Batch size: {par.batch_size}")
 
-# Instantiate the model.
+# Instantiate model
 M_deepvo = StereoAdaptiveVO(
     img_h=par.img_h,
     img_w=par.img_w,
@@ -122,7 +130,7 @@ if use_cuda:
 else:
     print('CUDA not available; using CPU.')
 
-# Load pretrained FlowNet weights if available and not resuming.
+# Load pretrained weights if available
 if par.pretrained_flownet and not par.resume:
     try:
         if use_cuda:
@@ -134,7 +142,7 @@ if par.pretrained_flownet and not par.resume:
         update_dict = {k: v for k, v in pretrained_w['state_dict'].items() if k in model_dict}
         missing_keys = set(model_dict.keys()) - set(update_dict.keys())
         if missing_keys:
-            print("Warning: The following keys were not found in the pretrained checkpoint:", missing_keys)
+            print("Warning: Missing keys from pretrained checkpoint:", missing_keys)
         model_dict.update(update_dict)
         M_deepvo.load_state_dict(model_dict)
     except Exception as e:
@@ -142,14 +150,14 @@ if par.pretrained_flownet and not par.resume:
 else:
     print('Skipping FlowNet pretrained weights loading.')
 
-# Create optimizer and learning rate scheduler.
 optimizer = torch.optim.Adam(M_deepvo.parameters(), lr=par.optim['lr'], weight_decay=par.optim.get('weight_decay', 0))
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=par.epochs, eta_min=1e-6)
-
-# Initialize GradScaler for AMP.
 scaler = GradScaler()
 
-# ---------------------- Training Loop ----------------------
+# Clear GPU cache
+if use_cuda:
+    torch.cuda.empty_cache()
+
 print('Recording training metrics in:', par.record_path)
 min_loss_t = 1e10
 min_loss_v = 1e10
@@ -161,16 +169,23 @@ M_deepvo.train()
 print(f"Training with climate sets: {par.climate_sets}")
 print(f"Total epochs: {par.epochs}")
 
+# Gradient accumulation settings
+effective_batch_size = 24  # Desired effective batch size
+accumulation_steps = effective_batch_size // par.batch_size  # Number of steps to accumulate gradients
+print(f"Effective batch size: {effective_batch_size}, Accumulation steps: {accumulation_steps}")
+
 epoch_times = []
 total_start_time = time.time()
 
 for ep in range(par.epochs):
     epoch_start_time = time.time()
     print('=' * 50)
-    
-    # --- Training Phase ---
+    # Training Phase
     M_deepvo.train()
     t_loss_list = []
+    accumulated_loss = 0
+    optimizer.zero_grad()  # Clear gradients at the start of the epoch
+    
     with tqdm(train_dl, desc=f"Epoch {ep+1}/{par.epochs} [Train]", unit="batch") as tbar:
         for batch_idx, (_, (t_x_03, t_x_02, t_x_depth, t_x_imu, t_x_gps), t_y) in enumerate(tbar):
             if use_cuda:
@@ -180,47 +195,74 @@ for ep in range(par.epochs):
                 t_x_imu = t_x_imu.cuda(non_blocking=par.pin_mem)
                 t_x_gps = t_x_gps.cuda(non_blocking=par.pin_mem)
                 t_y = t_y.cuda(non_blocking=par.pin_mem)
-            # Print sample shapes at the first batch of the first epoch.
-            if ep == 0 and batch_idx == 0:
-                print(f"Input shapes: t_x_03: {t_x_03.shape}, t_x_02: {t_x_02.shape}")
-            # Forward/backward step with mixed precision.
-            loss_val = M_deepvo.step((t_x_03, t_x_02, t_x_depth, t_x_imu, t_x_gps), t_y, optimizer, scaler)
-            t_loss_list.append(float(loss_val))
-            tbar.set_postfix({'loss': f"{loss_val:.4f}"})
+            
+            # Debug shapes
+            if batch_idx == 0:
+                print(f"Epoch {ep+1}: t_x_03 shape: {t_x_03.shape}")
+                print(f"Epoch {ep+1}: t_x_depth shape: {t_x_depth.shape}")
+                print(f"Epoch {ep+1}: t_x_imu shape: {t_x_imu.shape}")
+                print(f"Epoch {ep+1}: t_x_gps shape: {t_x_gps.shape}")
+                print(f"Epoch {ep+1}: t_y shape: {t_y.shape}")
+            
+            # Forward pass with mixed precision
+            with autocast(device_type='cuda', enabled=True):
+                predicted = M_deepvo.forward((t_x_03, t_x_02, t_x_depth, t_x_imu, t_x_gps))
+                total_loss = M_deepvo.get_loss((t_x_03, t_x_02, t_x_depth, t_x_imu, t_x_gps), t_y)
+            
+            # Debug predicted shape
+            if batch_idx == 0:
+                print(f"Epoch {ep+1}: predicted shape: {predicted.shape}")
+            
+            # Accumulate loss
+            accumulated_loss += total_loss / accumulation_steps
+            
+            # Backpropagation with gradient accumulation
+            scaler.scale(total_loss / accumulation_steps).backward()
+            
+            if (batch_idx + 1) % accumulation_steps == 0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(M_deepvo.parameters(), max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+                t_loss_list.append(float(accumulated_loss.item()))
+                tbar.set_postfix({'loss': f"{accumulated_loss.item():.4f}"})
+                accumulated_loss = 0
     
     train_time = time.time() - epoch_start_time
     print('Training phase completed in {:.1f} sec'.format(train_time))
     train_loss_mean = np.mean(t_loss_list)
     train_loss_std = np.std(t_loss_list)
     
-    # --- Validation Phase ---
+    # Validation Phase
     M_deepvo.eval()
     v_loss_list = []
     valid_start_time = time.time()
-    with tqdm(valid_dl, desc=f"Epoch {ep+1}/{par.epochs} [Valid]", unit="batch") as vbar:
-        for batch_idx, (_, (v_x_03, v_x_02, v_x_depth, v_x_imu, v_x_gps), v_y) in enumerate(vbar):
-            if use_cuda:
-                v_x_03 = v_x_03.cuda(non_blocking=par.pin_mem)
-                v_x_02 = v_x_02.cuda(non_blocking=par.pin_mem)
-                v_x_depth = v_x_depth.cuda(non_blocking=par.pin_mem)
-                v_x_imu = v_x_imu.cuda(non_blocking=par.pin_mem)
-                v_x_gps = v_x_gps.cuda(non_blocking=par.pin_mem)
-                v_y = v_y.cuda(non_blocking=par.pin_mem)
-            with autocast(device_type='cuda', enabled=True):
-                v_loss = M_deepvo.get_loss((v_x_03, v_x_02, v_x_depth, v_x_imu, v_x_gps), v_y)
-            v_loss_val = float(v_loss.data.cpu().numpy())
-            v_loss_list.append(v_loss_val)
-            vbar.set_postfix({'loss': f"{v_loss_val:.4f}"})
+    with torch.no_grad():
+        with tqdm(valid_dl, desc=f"Epoch {ep+1}/{par.epochs} [Valid]", unit="batch") as vbar:
+            for batch_idx, (_, (v_x_03, v_x_02, v_x_depth, v_x_imu, v_x_gps), v_y) in enumerate(vbar):
+                if use_cuda:
+                    v_x_03 = v_x_03.cuda(non_blocking=par.pin_mem)
+                    v_x_02 = v_x_02.cuda(non_blocking=par.pin_mem)
+                    v_x_depth = v_x_depth.cuda(non_blocking=par.pin_mem)
+                    v_x_imu = v_x_imu.cuda(non_blocking=par.pin_mem)
+                    v_x_gps = v_x_gps.cuda(non_blocking=par.pin_mem)
+                    v_y = v_y.cuda(non_blocking=par.pin_mem)
+                with autocast(device_type='cuda', enabled=True):
+                    v_total_loss = M_deepvo.get_loss((v_x_03, v_x_02, v_x_depth, v_x_imu, v_x_gps), v_y)
+                v_loss_val = float(v_total_loss.data.cpu().numpy())
+                v_loss_list.append(v_loss_val)
+                vbar.set_postfix({'loss': f"{v_loss_val:.4f}"})
     
     valid_time = time.time() - valid_start_time
     print('Validation phase completed in {:.1f} sec'.format(valid_time))
     valid_loss_mean = np.mean(v_loss_list)
     valid_loss_std = np.std(v_loss_list)
     
-    # --- Print Summary Metrics ---
+    # Print summary metrics in console
     print(f"Epoch {ep+1} Summary:")
     print(f"   Train Loss: Mean = {train_loss_mean:.4f}, Std = {train_loss_std:.4f}")
-    print(f"   Val   Loss: Mean = {valid_loss_mean:.4f}, Std = {valid_loss_std:.4f}")
+    print(f"   Validation Loss: Mean = {valid_loss_mean:.4f}, Std = {valid_loss_std:.4f}")
     
     scheduler.step()
     
@@ -229,7 +271,6 @@ for ep in range(par.epochs):
     current_lr = optimizer.param_groups[0]['lr']
     print(f"Epoch {ep+1} completed in {epoch_time:.1f} sec, Learning Rate: {current_lr:.6f}")
     
-    # Logging to wandb.
     wandb.log({
         "epoch": ep + 1,
         "train_loss_mean": train_loss_mean,
@@ -240,13 +281,11 @@ for ep in range(par.epochs):
         "learning_rate": current_lr,
     })
     
-    # Append summary metrics to record file.
     with open(par.record_path, 'a') as f:
-        f.write(f'\nEpoch {ep + 1}\nTrain Loss: Mean = {train_loss_mean:.4f}, Std = {train_loss_std:.4f}\n'
-                f'Validation Loss: Mean = {valid_loss_mean:.4f}, Std = {valid_loss_std:.4f}\n'
-                f'Learning Rate: {current_lr}\n')
+        f.write(f'\nEpoch {ep + 1}\nTrain Loss: Mean = {train_loss_mean:.4f}, Std = {train_loss_std:.4f}\n')
+        f.write(f'Validation Loss: Mean = {valid_loss_mean:.4f}, Std = {valid_loss_std:.4f}\n')
+        f.write(f'Learning Rate: {current_lr}\n')
     
-    # Checkpointing logic: Save model if loss improves.
     if valid_loss_mean < min_loss_v:
         min_loss_v = valid_loss_mean
         print(f"Validation loss improved at epoch {ep+1}; saving model...")
@@ -258,7 +297,6 @@ for ep in range(par.epochs):
         torch.save(M_deepvo.state_dict(), par.save_model_path + '.train')
         torch.save(optimizer.state_dict(), par.save_optimzer_path + '.train')
     
-    # Early stopping check.
     if valid_loss_mean < best_val_loss:
         best_val_loss = valid_loss_mean
         epochs_no_improve = 0
