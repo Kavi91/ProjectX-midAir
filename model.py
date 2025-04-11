@@ -275,7 +275,7 @@ class StereoAdaptiveVO(nn.Module):
             gps_ground_truth = x_gps  # [B, seq_len, 6]
             
             # Integrate predicted relative poses to absolute poses
-            predicted_absolute = self.compute_absolute_poses(predicted.unsqueeze(0))[0]  # [B, seq_len, 6]
+            predicted_absolute = self.compute_absolute_poses(predicted)  # [B, seq_len, 6]
             
             # Align predicted absolute poses with GPS ground truth at the first timestep
             offset = gps_ground_truth[:, 0, :] - predicted_absolute[:, 0, :]
